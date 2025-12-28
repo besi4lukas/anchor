@@ -3,20 +3,17 @@ import { View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 
-import { TodayScreen } from "../screens/TodayScreen";
+import { NotesScreen } from "../screens/NotesScreen";
 import { TodoScreen } from "../screens/TodoScreen";
 import { MeScreen } from "../screens/MeScreen";
 import { colors } from "../theme/colors";
 
-import { AnchorBeam } from "../components/AnchorBeam";
-import { EntriesProvider, useEntries } from "../state/EntriesContext";
-import { TasksProvider } from "../state/TasksContext";
+import { NoteBeam } from "../components/NoteBeam";
 
 const Tab = createBottomTabNavigator();
 
 function TabsWithBeam(): React.ReactElement {
-  const { createEntry } = useEntries();
-  const TAB_BAR_HEIGHT = 80;
+  const TAB_BAR_HEIGHT = 90;
 
   return (
     <View style={{ flex: 1 }}>
@@ -40,11 +37,11 @@ function TabsWithBeam(): React.ReactElement {
         }}
       >
         <Tab.Screen
-          name="Today"
-          component={TodayScreen}
+          name="Notes"
+          component={NotesScreen}
           options={{
             tabBarIcon: ({ color, size }) => (
-              <Ionicons name="calendar" size={size} color={color} />
+              <Ionicons name="document-text" size={size} color={color} />
             ),
           }}
         />
@@ -68,18 +65,12 @@ function TabsWithBeam(): React.ReactElement {
         />
       </Tab.Navigator>
 
-      {/* Global Beam (still creates entries for now) */}
-      <AnchorBeam onEntryCreated={createEntry} tabBarHeight={TAB_BAR_HEIGHT} />
+      {/* Global Beam - navigates to CaptureInputScreen */}
+      <NoteBeam tabBarHeight={TAB_BAR_HEIGHT} />
     </View>
   );
 }
 
 export function BottomTabs(): React.ReactElement {
-  return (
-    <EntriesProvider>
-      <TasksProvider>
-        <TabsWithBeam />
-      </TasksProvider>
-    </EntriesProvider>
-  );
+  return <TabsWithBeam />;
 }
