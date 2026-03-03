@@ -6,15 +6,26 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  const [redisPing, vectorInfo] = await Promise.all([
+  const [redisResult, vectorResult] = await Promise.allSettled([
     getRedis().ping(),
     getVectorIndex().info(),
   ])
 
-  return NextResponse.json({
-    redis: redisPing,
-    vector: 'ok',
-    vectorCount: vectorInfo.vectorCount,
-    dimension: vectorInfo.dimension,
-  })
+  const redis =
+    redisResult.status === 'fulfilled'
+      ? { ok: true, detail: redisResult.value }
+      : { ok: false, detail: String(redisResult.reason) }
+
+  const vector =
+    vectorResult.status === 'fulfilled'
+      ? {
+          ok: true,
+          vectorCount: vectorResult.value.vectorCount,
+          dimension: vectorResult.value.dimension,
+        }
+      : { ok: false, detail: String(vectorResult.reason) }
+
+  const healthy = redis.ok && vector.ok
+
+  return NextResponse.json({ redis, vector }, { status: healthy ? 200 : 503 })
 }
