@@ -1,13 +1,14 @@
-import { redis } from '@/lib/redis'
-import { vectorIndex } from '@/lib/vector'
+import { getRedis } from '@/lib/redis'
+import { getVectorIndex } from '@/lib/vector'
 import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const [redisPing, vectorInfo] = await Promise.all([
-    redis.ping(),
-    vectorIndex.info(),
+    getRedis().ping(),
+    getVectorIndex().info(),
   ])
 
   return NextResponse.json({

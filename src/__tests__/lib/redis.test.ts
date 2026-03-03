@@ -1,12 +1,13 @@
-import { redis } from '@/lib/redis'
+import { getRedis } from '@/lib/redis'
 
 describe('Redis', () => {
   it('responds to PING', async () => {
-    const result = await redis.ping()
+    const result = await getRedis().ping()
     expect(result).toBe('PONG')
   })
 
   it('can SET and GET with TTL', async () => {
+    const redis = getRedis()
     await redis.set('test:health', 'ok', { ex: 10 })
     const val = await redis.get('test:health')
     expect(val).toBe('ok')
