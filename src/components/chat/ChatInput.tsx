@@ -11,9 +11,14 @@ import {
 interface ChatInputProps {
   onSend: (msg: string) => void
   disabled?: boolean
+  placeholder?: string
 }
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  disabled,
+  placeholder = 'How are you feeling right now...',
+}: ChatInputProps) {
   const [value, setValue] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -46,36 +51,18 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
     }
   }
 
-  const canSend = value.trim().length > 0 && !disabled
-
   return (
-    <div data-testid="chat-input" className="flex items-end gap-2">
+    <div data-testid="chat-input" className="flex w-full">
       <textarea
         ref={textareaRef}
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
-        placeholder="How are you feeling right now..."
+        placeholder={placeholder}
         disabled={disabled}
         rows={1}
-        className="max-h-32 min-h-[44px] flex-1 resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-[15px] leading-relaxed text-[#1A1A2E] placeholder-gray-400 outline-none transition-colors focus:border-[#A6EEBF] focus:ring-1 focus:ring-[#A6EEBF]/40"
+        className="max-h-[200px] min-h-[90px] w-full resize-none rounded-xl border border-gray-200 bg-white px-5 py-4 text-[15px] leading-relaxed text-[#1A1A2E] placeholder-gray-400 outline-none transition-colors focus:border-[#A6EEBF] focus:ring-1 focus:ring-[#A6EEBF]/40"
       />
-      <button
-        type="button"
-        onClick={send}
-        disabled={!canSend}
-        aria-label="Send message"
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#A6EEBF] text-[#1A1A2E] transition-opacity disabled:opacity-30"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          className="h-5 w-5"
-        >
-          <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95l14.095-5.637a.75.75 0 0 0 0-1.4L3.105 2.288Z" />
-        </svg>
-      </button>
     </div>
   )
 }

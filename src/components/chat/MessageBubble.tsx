@@ -23,7 +23,7 @@ export function MessageBubble({
       {isUser ? (
         <div
           data-testid="message-bubble"
-          className="max-w-[85%] rounded-2xl bg-[#A6EEBF] px-4 py-3 text-[15px] leading-relaxed text-[#1A1A2E] sm:max-w-[70%]"
+          className="max-w-[85%] font-serif text-[17px] leading-[1.75] text-gray-500 sm:max-w-[70%]"
         >
           {isStreaming ? (
             <TypingIndicator />
