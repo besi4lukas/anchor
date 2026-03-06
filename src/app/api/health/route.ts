@@ -7,8 +7,8 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const [redisResult, vectorResult] = await Promise.allSettled([
-    getRedis().ping(),
-    getVectorIndex().info(),
+    Promise.resolve().then(() => getRedis().ping()),
+    Promise.resolve().then(() => getVectorIndex().info()),
   ])
 
   const redis =

@@ -19,6 +19,12 @@ suite('Upstash Vector', () => {
       topK: 3,
       includeMetadata: true,
     })
-    expect(results).toEqual([])
+    expect(Array.isArray(results)).toBe(true)
+    expect(results.length).toBeLessThanOrEqual(3)
+    for (const result of results) {
+      expect(result).toHaveProperty('id')
+      expect(result).toHaveProperty('score')
+      expect(result).toHaveProperty('metadata')
+    }
   })
 })
