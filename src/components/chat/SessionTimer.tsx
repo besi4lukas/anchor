@@ -8,14 +8,11 @@ interface SessionTimerProps {
 }
 
 export function SessionTimer({ expiresAt, onExpire }: SessionTimerProps) {
-  const calcRemaining = useCallback(
-    () =>
-      Math.max(
-        0,
-        Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000),
-      ),
-    [expiresAt],
-  )
+  const calcRemaining = useCallback(() => {
+    const expiresMs = new Date(expiresAt).getTime()
+    if (!Number.isFinite(expiresMs)) return 0
+    return Math.max(0, Math.floor((expiresMs - Date.now()) / 1000))
+  }, [expiresAt])
 
   const [remaining, setRemaining] = useState(calcRemaining)
 

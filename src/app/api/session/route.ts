@@ -12,10 +12,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const session = await getSession(sessionId)
   if (!session) {
-    return NextResponse.json(
+    const res = NextResponse.json(
       { error: 'Session expired or not found' },
       { status: 410 },
     )
+    res.cookies.delete(SESSION_COOKIE)
+    return res
   }
 
   return NextResponse.json({

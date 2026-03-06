@@ -11,7 +11,7 @@ suite('Redis', () => {
     expect(result).toBe('PONG')
   })
 
-  it('can SET and GET with TTL', async () => {
+  it('can SET and GET', async () => {
     const redis = getRedis()
     const key = `test:health:${Date.now()}`
     try {

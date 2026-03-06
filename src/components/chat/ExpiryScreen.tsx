@@ -18,8 +18,11 @@ const MOOD_LABELS = [
 export function ExpiryScreen({ onRestart }: ExpiryScreenProps) {
   const [selected, setSelected] = useState<number | null>(null)
   const [submitted, setSubmitted] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleMood = async (value: number) => {
+    if (isSubmitting || submitted) return
+    setIsSubmitting(true)
     setSelected(value)
     try {
       await fetch('/api/mood', {
@@ -31,6 +34,7 @@ export function ExpiryScreen({ onRestart }: ExpiryScreenProps) {
       // mood tracking is best-effort
     }
     setSubmitted(true)
+    setIsSubmitting(false)
   }
 
   return (

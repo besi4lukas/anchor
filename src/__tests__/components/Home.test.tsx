@@ -259,17 +259,23 @@ describe('Home – Loading State', () => {
 })
 
 describe('Home – Error Handling', () => {
-  it('remains on loading skeleton when session creation fails', async () => {
+  it('shows error UI with retry button when session creation fails', async () => {
     ;(global.fetch as jest.Mock).mockRejectedValueOnce(
       new Error('Network error'),
     )
 
-    const { container } = render(<Home />)
+    render(<Home />)
 
     await waitFor(() => {
-      const pulsingElements = container.querySelectorAll('.animate-pulse')
-      expect(pulsingElements.length).toBeGreaterThan(0)
+      expect(screen.getByTestId('bootstrap-error')).toBeInTheDocument()
     })
+
+    expect(
+      screen.getByText('Failed to start session. Please refresh.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /try again/i }),
+    ).toBeInTheDocument()
   })
 })
 

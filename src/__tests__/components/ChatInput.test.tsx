@@ -34,6 +34,11 @@ describe('ChatInput', () => {
         screen.queryByRole('button', { name: /send/i }),
       ).not.toBeInTheDocument()
     })
+
+    it('has an accessible aria-label', () => {
+      render(<ChatInput onSend={mockSend} />)
+      expect(screen.getByLabelText('Message input')).toBeInTheDocument()
+    })
   })
 
   describe('sending messages', () => {

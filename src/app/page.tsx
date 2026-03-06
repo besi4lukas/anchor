@@ -12,6 +12,19 @@ interface Message {
   isStreaming?: boolean
 }
 
+function isValidSessionPayload(
+  data: unknown,
+): data is { sessionId: string; expiresAt: string } {
+  if (typeof data !== 'object' || data === null) return false
+  const obj = data as Record<string, unknown>
+  return (
+    typeof obj.sessionId === 'string' &&
+    obj.sessionId.length > 0 &&
+    typeof obj.expiresAt === 'string' &&
+    obj.expiresAt.length > 0
+  )
+}
+
 export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
@@ -30,19 +43,24 @@ export default function Home() {
     scrollToBottom()
   }, [messages, scrollToBottom])
 
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const res = await fetch('/api/session/create', { method: 'POST' })
-        const data = await res.json()
-        setSessionId(data.sessionId)
-        setExpiresAt(data.expiresAt)
-      } catch {
-        setError('Failed to start session. Please refresh.')
+  const initSession = useCallback(async () => {
+    try {
+      const res = await fetch('/api/session/create', { method: 'POST' })
+      if (!res.ok) throw new Error(`Session create failed: ${res.status}`)
+      const data: unknown = await res.json()
+      if (!isValidSessionPayload(data)) {
+        throw new Error('Invalid session response')
       }
+      setSessionId(data.sessionId)
+      setExpiresAt(data.expiresAt)
+    } catch {
+      setError('Failed to start session. Please refresh.')
     }
-    init()
   }, [])
+
+  useEffect(() => {
+    initSession()
+  }, [initSession])
 
   const handleSend = useCallback(
     async (content: string) => {
@@ -71,14 +89,16 @@ export default function Home() {
         if (!reader) throw new Error('No response stream')
 
         let accumulated = ''
+        let sseBuffer = ''
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
 
-          const chunk = decoder.decode(value, { stream: true })
-          const lines = chunk.split('\n')
+          sseBuffer += decoder.decode(value, { stream: true })
+          const parts = sseBuffer.split('\n')
+          sseBuffer = parts.pop() ?? ''
 
-          for (const line of lines) {
+          for (const line of parts) {
             if (!line.startsWith('data: ')) continue
             const payload = line.slice(6).trim()
 
@@ -101,6 +121,33 @@ export default function Home() {
               })
             } catch {
               // skip malformed SSE lines
+            }
+          }
+        }
+
+        if (sseBuffer.trim()) {
+          const line = sseBuffer.trim()
+          if (line.startsWith('data: ')) {
+            const payload = line.slice(6).trim()
+            if (payload !== '[DONE]') {
+              try {
+                const parsed = JSON.parse(payload)
+                accumulated += parsed.text
+                setMessages((prev) => {
+                  const updated = [...prev]
+                  const last = updated[updated.length - 1]
+                  if (last.role === 'assistant') {
+                    updated[updated.length - 1] = {
+                      ...last,
+                      content: accumulated,
+                      isStreaming: false,
+                    }
+                  }
+                  return updated
+                })
+              } catch {
+                // skip malformed final line
+              }
             }
           }
         }
@@ -146,19 +193,10 @@ export default function Home() {
     setExpired(false)
     setMessages([])
     setError(null)
-
-    const init = async () => {
-      try {
-        const res = await fetch('/api/session/create', { method: 'POST' })
-        const data = await res.json()
-        setSessionId(data.sessionId)
-        setExpiresAt(data.expiresAt)
-      } catch {
-        setError('Failed to start session. Please refresh.')
-      }
-    }
-    init()
-  }, [])
+    setSessionId(null)
+    setExpiresAt(null)
+    initSession()
+  }, [initSession])
 
   const handleExpire = useCallback(() => {
     setExpired(true)
@@ -168,8 +206,30 @@ export default function Home() {
     return <ExpiryScreen onRestart={handleRestart} />
   }
 
-  // Loading skeleton while session initializes
   if (!sessionId) {
+    if (error) {
+      return (
+        <main className="flex min-h-screen flex-col items-center justify-center bg-[#F8FAFC] px-6">
+          <p
+            data-testid="bootstrap-error"
+            className="mb-4 text-center text-sm text-red-500"
+          >
+            {error}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setError(null)
+              initSession()
+            }}
+            className="rounded-xl bg-[#A6EEBF] px-6 py-3 text-sm font-medium text-[#1A1A2E] transition-opacity hover:opacity-90"
+          >
+            Try again
+          </button>
+        </main>
+      )
+    }
+
     return (
       <main className="flex min-h-screen flex-col bg-[#F8FAFC]">
         <header className="flex items-center justify-between border-b border-gray-100 bg-white/80 px-4 py-3 backdrop-blur-sm">
@@ -187,7 +247,9 @@ export default function Home() {
     )
   }
 
-  const hasAssistantResponded = messages.some((m) => m.role === 'assistant')
+  const hasAssistantResponded = messages.some(
+    (m) => m.role === 'assistant' && m.content.trim().length > 0,
+  )
 
   return (
     <main className="flex min-h-screen flex-col bg-[#F8FAFC]">

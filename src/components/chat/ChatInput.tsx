@@ -45,6 +45,7 @@ export function ChatInput({
   }, [value, disabled, onSend, resetHeight])
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing) return
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       send()
@@ -60,6 +61,7 @@ export function ChatInput({
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         disabled={disabled}
+        aria-label="Message input"
         rows={1}
         className="max-h-[200px] min-h-[90px] w-full resize-none rounded-xl border border-gray-200 bg-white px-5 py-4 text-[15px] leading-relaxed text-[#1A1A2E] placeholder-gray-400 outline-none transition-colors focus:border-[#A6EEBF] focus:ring-1 focus:ring-[#A6EEBF]/40"
       />

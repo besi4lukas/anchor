@@ -13,6 +13,9 @@ export const dynamic = 'force-dynamic'
 
 const MAX_MESSAGES = 30
 const CONTEXT_WINDOW = 20
+const STREAM_TIMEOUT_MS = 15_000
+const FALLBACK_MESSAGE =
+  'Anchor is taking a short breather. Please try again in a moment.'
 
 function getAnthropic(): Anthropic {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -47,7 +50,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     )
   }
 
-  if (session.message_count >= MAX_MESSAGES) {
+  if (session.message_count + 2 > MAX_MESSAGES) {
     return NextResponse.json(
       { error: 'Message limit reached' },
       { status: 429 },
@@ -84,12 +87,17 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   try {
     const anthropic = getAnthropic()
-    const stream = anthropic.messages.stream({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 300,
-      system: systemPrompt,
-      messages: claudeMessages,
-    })
+    const abortController = new AbortController()
+
+    const stream = anthropic.messages.stream(
+      {
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        system: systemPrompt,
+        messages: claudeMessages,
+      },
+      { signal: abortController.signal, timeout: STREAM_TIMEOUT_MS },
+    )
 
     let fullText = ''
     const encoder = new TextEncoder()
@@ -98,6 +106,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       async start(controller) {
         try {
           for await (const event of stream) {
+            if (abortController.signal.aborted) break
             if (
               event.type === 'content_block_delta' &&
               event.delta.type === 'text_delta'
@@ -122,16 +131,25 @@ export async function POST(req: NextRequest): Promise<Response> {
           session.message_count += 1
           await updateSession(session)
         } catch {
-          const fallback =
-            'Anchor is taking a short breather. Please try again in a moment.'
+          const fallbackMsg: ChatMessage = {
+            role: 'assistant',
+            content: FALLBACK_MESSAGE,
+            timestamp: Date.now(),
+          }
+          session.messages.push(fallbackMsg)
+          session.message_count += 1
+
           controller.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ text: fallback })}\n\ndata: [DONE]\n\n`,
+              `data: ${JSON.stringify({ text: FALLBACK_MESSAGE })}\n\ndata: [DONE]\n\n`,
             ),
           )
           controller.close()
           await updateSession(session)
         }
+      },
+      cancel() {
+        abortController.abort()
       },
     })
 
@@ -143,9 +161,14 @@ export async function POST(req: NextRequest): Promise<Response> {
       },
     })
   } catch {
+    const fallbackMsg: ChatMessage = {
+      role: 'assistant',
+      content: FALLBACK_MESSAGE,
+      timestamp: Date.now(),
+    }
+    session.messages.push(fallbackMsg)
+    session.message_count += 1
     await updateSession(session)
-    return streamText(
-      'Anchor is taking a short breather. Please try again in a moment.',
-    )
+    return streamText(FALLBACK_MESSAGE)
   }
 }
