@@ -2,12 +2,21 @@ import 'dotenv/config'
 import { readdir, readFile } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import { Index } from '@upstash/vector'
+import matter from 'gray-matter'
 import OpenAI from 'openai'
 import { chunkText } from '../src/lib/chunking'
 
 const KNOWLEDGE_DIR = './knowledge-base'
 const EMBED_BATCH_SIZE = 100
 const EMBED_MODEL = 'text-embedding-3-small'
+
+interface FrontMatter {
+  region?: string
+  contentType?: string
+  lastReviewed?: string
+  sources?: string[]
+  jurisdictionalAvailability?: string
+}
 
 interface VectorEntry {
   id: string
@@ -18,6 +27,11 @@ interface VectorEntry {
     title: string
     chunkIndex: number
     content: string
+    region?: string
+    contentType?: string
+    lastReviewed?: string
+    sources?: string[]
+    jurisdictionalAvailability?: string
   }
 }
 
@@ -47,22 +61,36 @@ async function main() {
 
   for (const file of files) {
     const filePath = join(KNOWLEDGE_DIR, file)
-    const content = await readFile(filePath, 'utf-8')
+    const raw = await readFile(filePath, 'utf-8')
+    const { data: frontMatter, content: body } = matter(raw)
     const source = basename(file, '.md')
     const title =
-      content
+      body
         .split('\n')
         .find((l) => l.startsWith('# '))
         ?.replace(/^#\s*/, '') || source
 
-    const chunks = chunkText(content)
+    const chunks = chunkText(body)
     console.log(`  ${file}: ${chunks.length} chunk(s)`)
+
+    const fm = frontMatter as FrontMatter
+    const baseMetadata = {
+      source,
+      title,
+      ...(fm.region && { region: fm.region }),
+      ...(fm.contentType && { contentType: fm.contentType }),
+      ...(fm.lastReviewed && { lastReviewed: fm.lastReviewed }),
+      ...(fm.sources && fm.sources.length > 0 && { sources: fm.sources }),
+      ...(fm.jurisdictionalAvailability && {
+        jurisdictionalAvailability: fm.jurisdictionalAvailability,
+      }),
+    }
 
     for (let i = 0; i < chunks.length; i++) {
       allVectors.push({
         id: `${source}_chunk_${i}`,
         content: chunks[i],
-        metadata: { source, title, chunkIndex: i, content: chunks[i] },
+        metadata: { ...baseMetadata, chunkIndex: i, content: chunks[i] },
       })
     }
   }
@@ -85,9 +113,21 @@ async function main() {
 
   console.log('Upserting to Upstash Vector...')
 
-  const upsertPayload = allVectors.map((v) => ({
+  const validVectors = allVectors.filter((v) => {
+    if (v.vector === undefined) {
+      console.warn(`Skipping ${v.id}: embedding missing`)
+      return false
+    }
+    return true
+  })
+
+  if (validVectors.length === 0) {
+    throw new Error('No valid vectors to upsert: all embeddings failed')
+  }
+
+  const upsertPayload = validVectors.map((v) => ({
     id: v.id,
-    vector: v.vector!,
+    vector: v.vector as number[],
     metadata: v.metadata,
   }))
 

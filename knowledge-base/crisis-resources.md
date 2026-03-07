@@ -1,3 +1,14 @@
+---
+region: US
+contentType: crisis-resource
+lastReviewed: "2025-03-06"
+sources:
+  - https://988lifeline.org/
+  - https://www.crisistextline.org/
+  - https://www.samhsa.gov/find-help/national-helpline
+jurisdictionalAvailability: United States
+---
+
 # Crisis Resources and Safety Planning
 
 If you or someone you know is in immediate danger, call 911 or your local emergency number. For mental health crises that are not immediately life-threatening, several confidential services are available around the clock, every day of the year.
@@ -30,7 +41,7 @@ Many people hesitate to contact a crisis line because they do not know what will
 
 When you call or text a crisis line, a trained counselor will answer. They will ask how you are doing and what prompted you to reach out. You are in control of the conversation — you can share as much or as little as you feel comfortable with. The counselor will not judge you, lecture you, or tell you what to do. Their role is to listen, help you process what you are feeling, and work with you to figure out next steps.
 
-Crisis counselors will only involve emergency services if they believe there is an immediate risk to your life or someone else's life. In the vast majority of calls and texts, the conversation stays between you and the counselor. Everything you share is confidential.
+Counselors may involve emergency services if there is an imminent risk to life; practices vary by center. See [988 Lifeline](https://988lifeline.org/) for details. In the vast majority of calls and texts, the conversation stays between you and the counselor. Everything you share is confidential.
 
 You do not need to have a plan or be in immediate danger to contact a crisis line. Feeling overwhelmed, hopeless, or like you cannot cope is reason enough. These services exist for exactly those moments.
 
