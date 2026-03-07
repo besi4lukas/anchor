@@ -29,6 +29,11 @@ describe('chunkText', () => {
     expect(chunks.length).toBe(1)
   })
 
+  it('returns no chunks for blank input', () => {
+    expect(chunkText('')).toHaveLength(0)
+    expect(chunkText('   ')).toHaveLength(0)
+  })
+
   it('throws RangeError when chunkWords is not a positive integer', () => {
     expect(() => chunkText('hello world', 0)).toThrow(RangeError)
     expect(() => chunkText('hello world', -1)).toThrow(RangeError)

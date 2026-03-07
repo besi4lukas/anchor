@@ -19,6 +19,7 @@ export function chunkText(
   }
 
   const words = text.split(/\s+/).filter(Boolean)
+  if (words.length === 0) return []
   if (words.length <= chunkWords) return [words.join(' ')]
 
   const chunks: string[] = []
