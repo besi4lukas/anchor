@@ -277,32 +277,6 @@ export default function Home() {
       {messages.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center px-4 pb-[180px]">
           <div className="mb-6 flex items-center justify-center gap-3">
-            <svg
-              width="40"
-              height="40"
-              viewBox="0 0 56 56"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              className="drop-shadow-sm"
-            >
-              <circle
-                cx="28"
-                cy="28"
-                r="28"
-                fill="#A6EEBF"
-                fillOpacity="0.4"
-                className="blur-[2px]"
-              />
-              <circle
-                cx="28"
-                cy="28"
-                r="20"
-                fill="#A6EEBF"
-                fillOpacity="0.7"
-                className="blur-[1px]"
-              />
-              <circle cx="28" cy="28" r="14" fill="#A6EEBF" />
-            </svg>
             <h2 className="font-serif text-[40px] font-medium tracking-tight text-[#1A1A2E]">
               Hey Stranger!
             </h2>
