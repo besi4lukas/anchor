@@ -1,26 +1,28 @@
-import { createSession, SESSION_COOKIE, SESSION_TTL } from '@/lib/session'
+import {
+  counterCookie,
+  createCounters,
+  writeTranscript,
+  SESSION_TTL,
+} from '@/lib/session'
 import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(): Promise<NextResponse> {
-  const session = await createSession()
+  const counters = createCounters()
 
-  const expiresAt = new Date(Date.now() + SESSION_TTL * 1000)
+  // Best effort: the session is fully usable without this landing.
+  await writeTranscript(counters.id, [])
+
+  const expiresAt = new Date(counters.created_at + SESSION_TTL * 1000)
 
   const response = NextResponse.json({
-    sessionId: session.id,
+    sessionId: counters.id,
     expiresAt: expiresAt.toISOString(),
   })
 
-  response.cookies.set(SESSION_COOKIE, session.id, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    path: '/',
-    maxAge: SESSION_TTL,
-  })
+  response.cookies.set(counterCookie(counters))
 
   return response
 }

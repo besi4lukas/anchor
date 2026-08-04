@@ -36,14 +36,22 @@ export function SessionTimer({ expiresAt, onExpire }: SessionTimerProps) {
   const display = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
   const isUrgent = remaining < 300
 
+  const label = isUrgent
+    ? `Session ending soon, ${minutes} minutes ${seconds} seconds remaining`
+    : `${minutes} minutes ${seconds} seconds remaining in this session`
+
   return (
     <span
       data-testid="session-timer"
-      className={`font-mono text-xs ${
-        isUrgent ? 'animate-pulse text-orange-400' : 'text-gray-400'
+      role="timer"
+      aria-label={label}
+      className={`font-mono text-xs tabular-nums ${
+        isUrgent
+          ? 'animate-pulse font-semibold text-orange-700 motion-reduce:animate-none'
+          : 'text-gray-600'
       }`}
     >
-      {display}
+      <span aria-hidden>{display}</span>
     </span>
   )
 }

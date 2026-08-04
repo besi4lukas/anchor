@@ -1,17 +1,17 @@
-import { getSession, deleteSession, SESSION_COOKIE } from '@/lib/session'
+import { deleteTranscript, verifyCounters, SESSION_COOKIE } from '@/lib/session'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const sessionId = req.cookies.get(SESSION_COOKIE)?.value
-  if (!sessionId) {
+  const token = req.cookies.get(SESSION_COOKIE)?.value
+  if (!token) {
     return NextResponse.json({ error: 'No session cookie' }, { status: 401 })
   }
 
-  const session = await getSession(sessionId)
-  if (!session) {
+  const counters = verifyCounters(token)
+  if (!counters) {
     const res = NextResponse.json(
       { error: 'Session expired or not found' },
       { status: 410 },
@@ -21,19 +21,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   return NextResponse.json({
-    id: session.id,
-    created_at: session.created_at,
-    last_active: session.last_active,
-    message_count: session.message_count,
-    crisis_flag: session.crisis_flag,
-    extended: session.extended,
+    id: counters.id,
+    created_at: counters.created_at,
+    last_active: counters.last_active,
+    message_count: counters.message_count,
+    crisis_flag: counters.crisis_flag,
+    extended: counters.extended,
   })
 }
 
 export async function DELETE(req: NextRequest): Promise<NextResponse> {
-  const sessionId = req.cookies.get(SESSION_COOKIE)?.value
-  if (sessionId) {
-    await deleteSession(sessionId)
+  const counters = verifyCounters(req.cookies.get(SESSION_COOKIE)?.value)
+  if (counters) {
+    await deleteTranscript(counters.id)
   }
 
   const response = NextResponse.json({ ok: true })

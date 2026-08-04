@@ -28,11 +28,38 @@ describe('ChatInput', () => {
       expect(screen.getByTestId('chat-input')).toBeInTheDocument()
     })
 
-    it('does not render a send button', () => {
+    it('renders a labelled send button', () => {
       render(<ChatInput onSend={mockSend} />)
       expect(
-        screen.queryByRole('button', { name: /send/i }),
-      ).not.toBeInTheDocument()
+        screen.getByRole('button', { name: 'Send message' }),
+      ).toBeInTheDocument()
+    })
+
+    it('disables the send button until there is text to send', async () => {
+      const user = userEvent.setup()
+      render(<ChatInput onSend={mockSend} />)
+
+      const button = screen.getByRole('button', { name: 'Send message' })
+      expect(button).toBeDisabled()
+
+      await user.type(
+        screen.getByPlaceholderText('How are you feeling right now...'),
+        'Hello',
+      )
+      expect(button).toBeEnabled()
+    })
+
+    it('sends the message when the send button is clicked', async () => {
+      const user = userEvent.setup()
+      render(<ChatInput onSend={mockSend} />)
+
+      await user.type(
+        screen.getByPlaceholderText('How are you feeling right now...'),
+        'Sent by click',
+      )
+      await user.click(screen.getByRole('button', { name: 'Send message' }))
+
+      expect(mockSend).toHaveBeenCalledWith('Sent by click')
     })
 
     it('has an accessible aria-label', () => {

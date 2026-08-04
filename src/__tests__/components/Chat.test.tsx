@@ -1,11 +1,16 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom'
-import Home from '@/app/page'
+import Chat from '@/app/chat/page'
 
 import { TextEncoder, TextDecoder } from 'util'
 import { ReadableStream } from 'stream/web'
 Object.assign(global, { TextEncoder, TextDecoder, ReadableStream })
+
+const mockPush = jest.fn()
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush }),
+}))
 
 Element.prototype.scrollIntoView = jest.fn()
 
@@ -50,31 +55,19 @@ function mockChatResponse(text: string) {
   })
 }
 
-describe('Home – Welcome Screen', () => {
+describe('Chat – Welcome Screen', () => {
   it('shows "Hey Stranger!" greeting after session loads', async () => {
     mockSessionCreate()
-    render(<Home />)
+    render(<Chat />)
 
     await waitFor(() => {
       expect(screen.getByText('Hey Stranger!')).toBeInTheDocument()
     })
-  })
-
-  it('shows the brand logo alongside greeting text', async () => {
-    mockSessionCreate()
-    const { container } = render(<Home />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Hey Stranger!')).toBeInTheDocument()
-    })
-
-    const svg = container.querySelector('svg')
-    expect(svg).toBeInTheDocument()
   })
 
   it('renders chat input with initial placeholder on welcome screen', async () => {
     mockSessionCreate()
-    render(<Home />)
+    render(<Chat />)
 
     await waitFor(() => {
       expect(
@@ -85,7 +78,7 @@ describe('Home – Welcome Screen', () => {
 
   it('does not show message bubbles on welcome screen', async () => {
     mockSessionCreate()
-    render(<Home />)
+    render(<Chat />)
 
     await waitFor(() => {
       expect(screen.getByText('Hey Stranger!')).toBeInTheDocument()
@@ -96,7 +89,7 @@ describe('Home – Welcome Screen', () => {
 
   it('does not show the disclaimer text on welcome screen', async () => {
     mockSessionCreate()
-    render(<Home />)
+    render(<Chat />)
 
     await waitFor(() => {
       expect(screen.getByText('Hey Stranger!')).toBeInTheDocument()
@@ -108,10 +101,10 @@ describe('Home – Welcome Screen', () => {
   })
 })
 
-describe('Home – Header', () => {
+describe('Chat – Header', () => {
   it('renders the Anchor brand name in header', async () => {
     mockSessionCreate()
-    render(<Home />)
+    render(<Chat />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Anchor' })).toBeInTheDocument()
@@ -120,7 +113,7 @@ describe('Home – Header', () => {
 
   it('renders the Clear & Exit button', async () => {
     mockSessionCreate()
-    render(<Home />)
+    render(<Chat />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument()
@@ -129,7 +122,7 @@ describe('Home – Header', () => {
 
   it('renders the session timer', async () => {
     mockSessionCreate()
-    render(<Home />)
+    render(<Chat />)
 
     await waitFor(() => {
       expect(screen.getByTestId('session-timer')).toBeInTheDocument()
@@ -137,13 +130,13 @@ describe('Home – Header', () => {
   })
 })
 
-describe('Home – Chat Transition', () => {
+describe('Chat – Chat Transition', () => {
   it('hides welcome screen and shows messages after user sends a message', async () => {
     const user = userEvent.setup()
     mockSessionCreate()
     mockChatResponse('I hear you.')
 
-    render(<Home />)
+    render(<Chat />)
 
     await waitFor(() => {
       expect(
@@ -165,12 +158,42 @@ describe('Home – Chat Transition', () => {
     })
   })
 
+  it('sends its own copy of the transcript so a dead cache is survivable', async () => {
+    const user = userEvent.setup()
+    mockSessionCreate()
+    mockChatResponse('I hear you.')
+    mockChatResponse('Tell me more.')
+
+    render(<Chat />)
+
+    const textarea = await screen.findByPlaceholderText(
+      'How are you feeling right now...',
+    )
+    await user.type(textarea, 'first message{Enter}')
+    await waitFor(() => expect(screen.getByText('I hear you.')).toBeVisible())
+
+    await user.type(screen.getByPlaceholderText('Reply...'), 'second{Enter}')
+
+    await waitFor(() => {
+      const calls = (global.fetch as jest.Mock).mock.calls
+      const last = calls[calls.length - 1]
+      expect(last[0]).toBe('/api/chat')
+
+      const body = JSON.parse(last[1].body)
+      expect(body.message).toBe('second')
+      expect(body.messages).toEqual([
+        { role: 'user', content: 'first message' },
+        { role: 'assistant', content: 'I hear you.' },
+      ])
+    })
+  })
+
   it('shows disclaimer text after assistant responds', async () => {
     const user = userEvent.setup()
     mockSessionCreate()
     mockChatResponse('That sounds tough.')
 
-    render(<Home />)
+    render(<Chat />)
 
     await waitFor(() => {
       expect(
@@ -193,7 +216,7 @@ describe('Home – Chat Transition', () => {
     mockSessionCreate()
     mockChatResponse('I understand.')
 
-    render(<Home />)
+    render(<Chat />)
 
     await waitFor(() => {
       expect(
@@ -212,13 +235,13 @@ describe('Home – Chat Transition', () => {
   })
 })
 
-describe('Home – Restart Flow', () => {
+describe('Chat – Restart Flow', () => {
   it('resets to welcome screen when Anchor button is clicked', async () => {
     const user = userEvent.setup()
     mockSessionCreate()
     mockChatResponse('Hello!')
 
-    render(<Home />)
+    render(<Chat />)
 
     await waitFor(() => {
       expect(
@@ -248,23 +271,23 @@ describe('Home – Restart Flow', () => {
   })
 })
 
-describe('Home – Loading State', () => {
+describe('Chat – Loading State', () => {
   it('shows loading skeleton before session is created', () => {
     ;(global.fetch as jest.Mock).mockReturnValueOnce(new Promise(() => {}))
-    const { container } = render(<Home />)
+    const { container } = render(<Chat />)
 
     const pulsingElements = container.querySelectorAll('.animate-pulse')
     expect(pulsingElements.length).toBeGreaterThan(0)
   })
 })
 
-describe('Home – Error Handling', () => {
+describe('Chat – Error Handling', () => {
   it('shows error UI with retry button when session creation fails', async () => {
     ;(global.fetch as jest.Mock).mockRejectedValueOnce(
       new Error('Network error'),
     )
 
-    render(<Home />)
+    render(<Chat />)
 
     await waitFor(() => {
       expect(screen.getByTestId('bootstrap-error')).toBeInTheDocument()
@@ -279,13 +302,13 @@ describe('Home – Error Handling', () => {
   })
 })
 
-describe('Home – Expiry', () => {
-  it('shows expiry screen when Clear & Exit is clicked', async () => {
+describe('Chat – Expiry', () => {
+  it('returns to the landing page when Clear & Exit is clicked', async () => {
     const user = userEvent.setup()
     mockSessionCreate()
     ;(global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true })
 
-    render(<Home />)
+    render(<Chat />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument()
@@ -294,7 +317,24 @@ describe('Home – Expiry', () => {
     await user.click(screen.getByRole('button', { name: /clear/i }))
 
     await waitFor(() => {
-      expect(screen.getByTestId('expiry-screen')).toBeInTheDocument()
+      expect(mockPush).toHaveBeenCalledWith('/')
+    })
+    expect(screen.queryByTestId('expiry-screen')).not.toBeInTheDocument()
+  })
+
+  it('returns to the landing page when the timer runs out', async () => {
+    ;(global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        sessionId: 'expired-session',
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+      }),
+    })
+
+    render(<Chat />)
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/'), {
+      timeout: 4000,
     })
   })
 })

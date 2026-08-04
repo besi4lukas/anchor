@@ -23,8 +23,9 @@ export function MessageBubble({
       {isUser ? (
         <div
           data-testid="message-bubble"
-          className="max-w-[85%] font-serif text-[17px] leading-[1.75] text-gray-500 sm:max-w-[70%]"
+          className="relative max-w-[85%] rounded-2xl bg-[#EDF1F5] px-4 py-3 font-serif text-[17px] leading-[1.75] text-[#1A1A2E] sm:max-w-[70%]"
         >
+          <span className="sr-only">You said: </span>
           {isStreaming ? (
             <TypingIndicator />
           ) : (
@@ -34,8 +35,9 @@ export function MessageBubble({
       ) : (
         <div
           data-testid="message-bubble"
-          className="w-full font-serif text-[17px] leading-[1.75] text-[#1A1A2E]"
+          className="relative w-full font-serif text-[17px] leading-[1.75] text-[#1A1A2E]"
         >
+          <span className="sr-only">Anchor said: </span>
           {isStreaming ? (
             <TypingIndicator />
           ) : (

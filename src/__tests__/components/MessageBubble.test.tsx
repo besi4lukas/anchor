@@ -42,16 +42,16 @@ describe('MessageBubble', () => {
   })
 
   describe('user bubble styling', () => {
-    it('has no background color on user messages', () => {
+    it('sits on a filled surface so it reads as the user turn', () => {
       render(<MessageBubble role="user" content="Hello" />)
       const bubble = screen.getByTestId('message-bubble')
-      expect(bubble.className).not.toContain('bg-')
+      expect(bubble.className).toContain('bg-[#EDF1F5]')
     })
 
-    it('uses muted text color for user messages', () => {
+    it('uses the same high-contrast text colour as the assistant', () => {
       render(<MessageBubble role="user" content="Hello" />)
       const bubble = screen.getByTestId('message-bubble')
-      expect(bubble.className).toContain('text-gray-500')
+      expect(bubble.className).toContain('text-[#1A1A2E]')
     })
 
     it('uses serif font matching assistant style', () => {

@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
   type ChangeEvent,
 } from 'react'
+import { ArrowUp } from 'lucide-react'
 
 interface ChatInputProps {
   onSend: (msg: string) => void
@@ -52,8 +53,13 @@ export function ChatInput({
     }
   }
 
+  const canSend = value.trim().length > 0 && !disabled
+
   return (
-    <div data-testid="chat-input" className="flex w-full">
+    <div
+      data-testid="chat-input"
+      className="relative flex w-full items-end gap-2 rounded-2xl border border-gray-200 bg-white p-2 shadow-[0_1px_2px_rgba(16,24,40,0.05),0_12px_28px_-12px_rgba(16,24,40,0.16)] transition-colors focus-within:border-[#A6EEBF] focus-within:ring-2 focus-within:ring-[#A6EEBF]/40"
+    >
       <textarea
         ref={textareaRef}
         value={value}
@@ -62,9 +68,22 @@ export function ChatInput({
         placeholder={placeholder}
         disabled={disabled}
         aria-label="Message input"
+        aria-describedby="chat-input-hint"
         rows={1}
-        className="max-h-[200px] min-h-[90px] w-full resize-none rounded-xl border border-gray-200 bg-white px-5 py-4 text-[15px] leading-relaxed text-[#1A1A2E] placeholder-gray-400 outline-none transition-colors focus:border-[#A6EEBF] focus:ring-1 focus:ring-[#A6EEBF]/40"
+        className="max-h-[200px] min-h-[74px] w-full flex-1 resize-none bg-transparent px-3 py-2 text-[15px] leading-relaxed text-[#1A1A2E] placeholder-gray-500 outline-none disabled:cursor-not-allowed"
       />
+      <button
+        type="button"
+        onClick={send}
+        disabled={!canSend}
+        aria-label="Send message"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#1A1A2E] text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1A2E] disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        <ArrowUp aria-hidden className="h-5 w-5" />
+      </button>
+      <span id="chat-input-hint" className="sr-only">
+        Press Enter to send, Shift plus Enter for a new line.
+      </span>
     </div>
   )
 }

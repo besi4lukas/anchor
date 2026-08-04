@@ -1,338 +1,136 @@
-'use client'
+import type { Metadata } from 'next'
+import Image from 'next/image'
+import Link from 'next/link'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { MessageBubble } from '@/components/chat/MessageBubble'
-import { ChatInput } from '@/components/chat/ChatInput'
-import { SessionTimer } from '@/components/chat/SessionTimer'
-import { ExpiryScreen } from '@/components/chat/ExpiryScreen'
-
-interface Message {
-  role: 'user' | 'assistant'
-  content: string
-  isStreaming?: boolean
+export const metadata: Metadata = {
+  title: 'Anchor',
+  description:
+    'A private place to talk when things feel heavy. The session lasts sixty minutes. When it ends, the conversation is gone.',
 }
 
-function isValidSessionPayload(
-  data: unknown,
-): data is { sessionId: string; expiresAt: string } {
-  if (typeof data !== 'object' || data === null) return false
-  const obj = data as Record<string, unknown>
+const PROMISES = [
+  {
+    label: 'Sixty minutes',
+    body: 'A session runs for one hour, then closes on its own. You can start another whenever you want.',
+  },
+  {
+    label: 'Never stored',
+    body: 'Messages are held in memory for the length of the session. Nothing is written to disk, backed up, or used for training.',
+  },
+  {
+    label: 'No account',
+    body: 'No name, email, or password. There is no history to log back into.',
+  },
+]
+
+const FOOTER_LINKS = [
+  { label: 'Privacy', href: '/privacy' },
+  { label: 'Terms', href: '/terms' },
+  { label: 'support@anchor.chat', href: 'mailto:kingsley.besidonne@gmail.com' },
+]
+
+export default function Landing() {
   return (
-    typeof obj.sessionId === 'string' &&
-    obj.sessionId.length > 0 &&
-    typeof obj.expiresAt === 'string' &&
-    obj.expiresAt.length > 0
-  )
-}
+    <div className="relative flex min-h-screen flex-col overflow-hidden bg-anchor-bg">
+      <div className="anchor-halo absolute inset-0" aria-hidden />
 
-export default function Home() {
-  const [sessionId, setSessionId] = useState<string | null>(null)
-  const [expiresAt, setExpiresAt] = useState<string | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [expired, setExpired] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const bottomRef = useRef<HTMLDivElement>(null)
-
-  const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [])
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages, scrollToBottom])
-
-  const initSession = useCallback(async () => {
-    try {
-      const res = await fetch('/api/session/create', { method: 'POST' })
-      if (!res.ok) throw new Error(`Session create failed: ${res.status}`)
-      const data: unknown = await res.json()
-      if (!isValidSessionPayload(data)) {
-        throw new Error('Invalid session response')
-      }
-      setSessionId(data.sessionId)
-      setExpiresAt(data.expiresAt)
-    } catch {
-      setError('Failed to start session. Please refresh.')
-    }
-  }, [])
-
-  useEffect(() => {
-    initSession()
-  }, [initSession])
-
-  const handleSend = useCallback(
-    async (content: string) => {
-      if (!sessionId) return
-
-      setError(null)
-      setMessages((prev) => [...prev, { role: 'user', content }])
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: '', isStreaming: true },
-      ])
-      setIsLoading(true)
-
-      try {
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: content }),
-        })
-
-        if (!res.ok) throw new Error('Chat request failed')
-
-        const reader = res.body?.getReader()
-        const decoder = new TextDecoder()
-
-        if (!reader) throw new Error('No response stream')
-
-        let accumulated = ''
-        let sseBuffer = ''
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          sseBuffer += decoder.decode(value, { stream: true })
-          const parts = sseBuffer.split('\n')
-          sseBuffer = parts.pop() ?? ''
-
-          for (const line of parts) {
-            if (!line.startsWith('data: ')) continue
-            const payload = line.slice(6).trim()
-
-            if (payload === '[DONE]') continue
-
-            try {
-              const parsed = JSON.parse(payload)
-              accumulated += parsed.text
-              setMessages((prev) => {
-                const updated = [...prev]
-                const last = updated[updated.length - 1]
-                if (last.role === 'assistant') {
-                  updated[updated.length - 1] = {
-                    ...last,
-                    content: accumulated,
-                    isStreaming: false,
-                  }
-                }
-                return updated
-              })
-            } catch {
-              // skip malformed SSE lines
-            }
-          }
-        }
-
-        if (sseBuffer.trim()) {
-          const line = sseBuffer.trim()
-          if (line.startsWith('data: ')) {
-            const payload = line.slice(6).trim()
-            if (payload !== '[DONE]') {
-              try {
-                const parsed = JSON.parse(payload)
-                accumulated += parsed.text
-                setMessages((prev) => {
-                  const updated = [...prev]
-                  const last = updated[updated.length - 1]
-                  if (last.role === 'assistant') {
-                    updated[updated.length - 1] = {
-                      ...last,
-                      content: accumulated,
-                      isStreaming: false,
-                    }
-                  }
-                  return updated
-                })
-              } catch {
-                // skip malformed final line
-              }
-            }
-          }
-        }
-
-        setMessages((prev) => {
-          const updated = [...prev]
-          const last = updated[updated.length - 1]
-          if (last.role === 'assistant') {
-            updated[updated.length - 1] = { ...last, isStreaming: false }
-          }
-          return updated
-        })
-      } catch {
-        setMessages((prev) => {
-          const updated = [...prev]
-          if (updated[updated.length - 1]?.isStreaming) {
-            updated[updated.length - 1] = {
-              role: 'assistant',
-              content: 'Anchor is connecting\u2026 please try again.',
-              isStreaming: false,
-            }
-          }
-          return updated
-        })
-        setError('Anchor is connecting\u2026')
-      } finally {
-        setIsLoading(false)
-      }
-    },
-    [sessionId],
-  )
-
-  const handleExit = useCallback(async () => {
-    try {
-      await fetch('/api/session', { method: 'DELETE' })
-    } catch {
-      // best-effort cleanup
-    }
-    setExpired(true)
-  }, [])
-
-  const handleRestart = useCallback(() => {
-    setExpired(false)
-    setMessages([])
-    setError(null)
-    setSessionId(null)
-    setExpiresAt(null)
-    initSession()
-  }, [initSession])
-
-  const handleExpire = useCallback(() => {
-    setExpired(true)
-  }, [])
-
-  if (expired) {
-    return <ExpiryScreen onRestart={handleRestart} />
-  }
-
-  if (!sessionId) {
-    if (error) {
-      return (
-        <main className="flex min-h-screen flex-col items-center justify-center bg-[#F8FAFC] px-6">
-          <p
-            data-testid="bootstrap-error"
-            className="mb-4 text-center text-sm text-red-500"
-          >
-            {error}
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setError(null)
-              initSession()
-            }}
-            className="rounded-xl bg-[#A6EEBF] px-6 py-3 text-sm font-medium text-[#1A1A2E] transition-opacity hover:opacity-90"
-          >
-            Try again
-          </button>
-        </main>
-      )
-    }
-
-    return (
-      <main className="flex min-h-screen flex-col bg-[#F8FAFC]">
-        <header className="flex items-center justify-between border-b border-gray-100 bg-white/80 px-4 py-3 backdrop-blur-sm">
-          <div className="h-5 w-20 animate-pulse rounded bg-gray-200" />
-          <div className="h-4 w-12 animate-pulse rounded bg-gray-200" />
-        </header>
-        <div className="flex flex-1 flex-col items-center justify-center px-4">
-          <div className="mb-6 h-12 w-12 animate-pulse rounded-full bg-gray-200" />
-          <div className="mb-8 h-8 w-48 animate-pulse rounded bg-gray-200" />
-          <div className="w-full max-w-2xl">
-            <div className="h-12 w-full animate-pulse rounded-xl bg-gray-200" />
-          </div>
+      <header className="relative flex items-center justify-between gap-4 px-6 py-6 sm:px-14 sm:py-[34px]">
+        <div className="flex items-center gap-[11px]">
+          <Image
+            src="/anchor-ai.png"
+            alt=""
+            aria-hidden
+            width={26}
+            height={26}
+            className="h-[26px] w-[26px] mix-blend-multiply"
+          />
+          <span className="font-newsreader text-[21px] tracking-[0.01em] text-anchor-brand">
+            Anchor
+          </span>
         </div>
-      </main>
-    )
-  }
-
-  const hasAssistantResponded = messages.some(
-    (m) => m.role === 'assistant' && m.content.trim().length > 0,
-  )
-
-  return (
-    <main className="flex min-h-screen flex-col bg-[#F8FAFC]">
-      <header className="flex items-center justify-between border-b border-gray-100 bg-white/80 px-4 py-3 backdrop-blur-sm">
-        <button
-          onClick={handleRestart}
-          className="font-serif text-lg font-medium text-[#1A1A2E] transition-opacity hover:opacity-80"
-        >
-          Anchor
-        </button>
-        <div className="flex items-center gap-3">
-          {expiresAt && (
-            <SessionTimer expiresAt={expiresAt} onExpire={handleExpire} />
-          )}
-          <button
-            type="button"
-            onClick={handleExit}
-            className="text-xs font-medium text-gray-400 transition-colors hover:text-gray-600"
-          >
-            Clear &amp; Exit
-          </button>
-        </div>
+        <span className="text-xs uppercase tracking-[0.14em] text-anchor-subtle">
+          No account, ever
+        </span>
       </header>
 
-      {messages.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center px-4 pb-[180px]">
-          <div className="mb-6 flex items-center justify-center gap-3">
-            <h2 className="font-serif text-[40px] font-medium tracking-tight text-[#1A1A2E]">
-              Hey Stranger!
-            </h2>
-          </div>
-          <div className="w-full max-w-3xl">
-            <ChatInput
-              onSend={handleSend}
-              disabled={isLoading}
-              placeholder="How are you feeling right now..."
-            />
+      <main className="relative flex flex-1 flex-col items-center justify-center gap-8 px-6 pb-14 pt-6 text-center sm:gap-[34px] sm:px-14 sm:pb-14 sm:pt-10">
+        <div className="relative grid h-[160px] w-[160px] place-items-center sm:h-[220px] sm:w-[220px]">
+          {/* The orb asset is opaque white-backed, so blurring it leaves a
+              faint square edge; the radial mask fades that boundary out. */}
+          <Image
+            src="/anchor-ai.png"
+            alt=""
+            aria-hidden
+            width={300}
+            height={300}
+            priority
+            className="absolute h-[220px] w-[220px] max-w-none animate-haze mix-blend-multiply blur-[26px] [mask-image:radial-gradient(circle,black_40%,transparent_72%)] sm:h-[300px] sm:w-[300px]"
+          />
+          <Image
+            src="/anchor-ai.png"
+            alt="Anchor"
+            width={240}
+            height={240}
+            priority
+            className="relative h-[180px] w-[180px] max-w-none animate-breathe mix-blend-multiply sm:h-[240px] sm:w-[240px]"
+          />
+        </div>
+
+        <div className="flex max-w-[620px] flex-col items-center gap-[18px]">
+          <h1 className="text-pretty font-newsreader text-[38px] font-light leading-[1.06] tracking-[-0.015em] text-anchor-ink sm:text-[62px]">
+            One hour. Nothing kept.
+          </h1>
+          <p className="max-w-[460px] text-pretty text-[17px] leading-[1.6] text-anchor-body">
+            A private place to talk when things feel heavy. The session lasts
+            sixty minutes. When it ends, the conversation is gone.
+          </p>
+        </div>
+
+        <div className="flex flex-col items-center gap-[14px]">
+          <Link
+            href="/chat"
+            className="rounded-full bg-anchor-accent px-11 py-[17px] text-base tracking-[0.01em] text-anchor-accent-fg transition duration-200 hover:-translate-y-px hover:bg-anchor-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-anchor-accent"
+          >
+            Start session
+          </Link>
+          <span className="text-[13px] text-anchor-caption">
+            Opens straight into the chat. No sign-up, no email.
+          </span>
+        </div>
+      </main>
+
+      <footer className="relative flex flex-col gap-[18px] border-t border-anchor-line px-6 pb-6 pt-5 sm:px-14 sm:pb-[26px] sm:pt-[22px]">
+        <div className="grid gap-8 sm:grid-cols-3 sm:gap-10">
+          {PROMISES.map(({ label, body }) => (
+            <div key={label} className="flex flex-col gap-[5px]">
+              <span className="text-[11px] uppercase tracking-[0.14em] text-anchor-faint">
+                {label}
+              </span>
+              <span className="text-[13px] leading-[1.55] text-anchor-muted">
+                {body}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-col items-start justify-between gap-4 text-xs text-anchor-ghost sm:flex-row sm:items-center sm:gap-6">
+          <span>
+            Anchor is not a crisis service. If you are in danger, call 911 or
+            your local emergency number.
+          </span>
+          <div className="flex gap-[22px]">
+            {FOOTER_LINKS.map(({ label, href }) => (
+              <Link
+                key={label}
+                href={href}
+                className="text-anchor-link hover:text-anchor-link-hover"
+              >
+                {label}
+              </Link>
+            ))}
           </div>
         </div>
-      ) : (
-        <>
-          <div className="flex-1 overflow-y-auto pb-32">
-            <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
-              {messages.map((msg, i) => (
-                <MessageBubble
-                  key={i}
-                  role={msg.role}
-                  content={msg.content}
-                  isStreaming={msg.isStreaming}
-                />
-              ))}
-              {error && (
-                <p
-                  data-testid="chat-error"
-                  className="text-center text-xs text-orange-400"
-                >
-                  {error}
-                </p>
-              )}
-              <div ref={bottomRef} />
-            </div>
-          </div>
-
-          <div className="fixed inset-x-0 bottom-0 bg-gradient-to-t from-[#F8FAFC] from-80% to-transparent px-4 pb-4 pt-6">
-            <div className="mx-auto max-w-3xl">
-              <ChatInput
-                onSend={handleSend}
-                disabled={isLoading}
-                placeholder={
-                  hasAssistantResponded
-                    ? 'Reply...'
-                    : 'How are you feeling right now...'
-                }
-              />
-              {hasAssistantResponded && (
-                <p className="mt-3 text-center text-[13px] text-gray-400">
-                  Anchor can make mistakes. If it is an emergency call 911
-                </p>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-    </main>
+      </footer>
+    </div>
   )
 }

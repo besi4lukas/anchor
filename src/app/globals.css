@@ -26,6 +26,40 @@
   .text-balance {
     text-wrap: balance;
   }
+
+  .text-pretty {
+    text-wrap: pretty;
+  }
+}
+
+@layer components {
+  /* Soft light source behind the landing hero. */
+  .anchor-halo {
+    background: radial-gradient(
+      60% 50% at 50% 42%,
+      oklch(0.985 0.012 155) 0%,
+      oklch(0.965 0.006 150) 70%
+    );
+  }
+}
+
+@layer components {
+  .typing-dot {
+    animation: typing 1.4s infinite;
+  }
+}
+
+/* The design exposes breathing as a toggle; honour the OS setting instead. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-breathe,
+  .animate-haze,
+  .typing-dot {
+    animation: none;
+  }
+
+  .typing-dot {
+    opacity: 0.6;
+  }
 }
 
 @keyframes typing {

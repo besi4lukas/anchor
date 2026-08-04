@@ -19,8 +19,43 @@ const config: Config = {
           'Times New Roman',
           'serif',
         ],
+        newsreader: ['var(--font-newsreader)', 'Georgia', 'serif'],
+      },
+      keyframes: {
+        breathe: {
+          '0%, 100%': { transform: 'scale(1)', opacity: '0.94' },
+          '50%': { transform: 'scale(1.045)', opacity: '1' },
+        },
+        haze: {
+          '0%, 100%': { transform: 'scale(1.15)', opacity: '0.5' },
+          '50%': { transform: 'scale(1.3)', opacity: '0.75' },
+        },
+      },
+      animation: {
+        breathe: 'breathe 7s ease-in-out infinite',
+        haze: 'haze 9s ease-in-out infinite',
       },
       colors: {
+        // Landing surface palette, carried over verbatim from the Anchor
+        // Landing design file.
+        anchor: {
+          bg: 'oklch(0.965 0.006 150)',
+          glow: 'oklch(0.985 0.012 155)',
+          line: 'oklch(0.9 0.008 155)',
+          ink: 'oklch(0.27 0.02 165)',
+          brand: 'oklch(0.3 0.02 165)',
+          body: 'oklch(0.48 0.015 160)',
+          muted: 'oklch(0.45 0.015 160)',
+          subtle: 'oklch(0.6 0.02 160)',
+          caption: 'oklch(0.62 0.015 160)',
+          faint: 'oklch(0.63 0.02 160)',
+          ghost: 'oklch(0.65 0.015 160)',
+          accent: 'oklch(0.42 0.055 165)',
+          'accent-hover': 'oklch(0.35 0.06 165)',
+          'accent-fg': 'oklch(0.99 0.005 150)',
+          link: 'oklch(0.45 0.05 165)',
+          'link-hover': 'oklch(0.32 0.06 165)',
+        },
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {
