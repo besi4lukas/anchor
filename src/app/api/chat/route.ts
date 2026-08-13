@@ -13,6 +13,7 @@ import {
   type SessionCounters,
 } from '@/lib/session'
 import { ANCHOR_SYSTEM_PROMPT } from '@/lib/anchor-persona'
+import { retrieveContext, buildContextBlock } from '@/lib/rag'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -104,7 +105,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     .slice(-CONTEXT_WINDOW)
     .map((m) => ({ role: m.role, content: m.content }))
 
-  const systemPrompt = ANCHOR_SYSTEM_PROMPT.replace('{context}', '')
+  // retrieveContext swallows its own failures and returns [], so a retrieval
+  // outage degrades to an unaugmented prompt rather than breaking the chat.
+  const ragChunks = await retrieveContext(message)
+  const contextBlock = buildContextBlock(ragChunks)
+  const systemPrompt = ANCHOR_SYSTEM_PROMPT.replace('{context}', contextBlock)
 
   const persist = (assistant: string) =>
     writeTranscript(
