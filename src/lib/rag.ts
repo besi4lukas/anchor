@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { getVectorIndex } from '@/lib/vector'
+import { withDeadline } from '@/lib/deadline'
 
 const EMBED_MODEL = 'text-embedding-3-small'
 
@@ -22,29 +23,6 @@ function getOpenAI(): OpenAI {
     })
   }
   return _openai
-}
-
-/**
- * Resolves to `fallback` if `work` has not settled within `ms`. The timer is
- * always cleared so a fast retrieval cannot hold the event loop open.
- */
-function withDeadline<T>(
-  work: Promise<T>,
-  ms: number,
-  fallback: T,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-
-  const deadline = new Promise<T>((resolve) => {
-    timer = setTimeout(() => {
-      console.error(
-        `[RAG] Retrieval exceeded ${ms}ms budget, continuing without context`,
-      )
-      resolve(fallback)
-    }, ms)
-  })
-
-  return Promise.race([work, deadline]).finally(() => clearTimeout(timer))
 }
 
 export interface RagChunk {
@@ -70,6 +48,7 @@ export async function retrieveContext(
     runRetrieval(query, topK, minScore),
     RETRIEVAL_BUDGET_MS,
     [],
+    '[RAG] Retrieval',
   )
 }
 

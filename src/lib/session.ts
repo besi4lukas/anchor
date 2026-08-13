@@ -187,6 +187,48 @@ export async function writeTranscript(
   }
 }
 
+// --- crisis flag -------------------------------------------------------------
+//
+// The signed cookie carries crisis_flag, but a signature only proves a token was
+// once issued by us — it cannot stop a client from replaying an older cookie it
+// saved before the flag was set. For a flag whose whole purpose is to be
+// irreversible, that is not good enough, so the server keeps its own record and
+// callers treat the two as an OR. Redis being down falls back to the cookie
+// alone, which is the develop-branch behaviour rather than a new failure mode.
+
+function crisisKey(id: string): string {
+  return `crisis:${id}`
+}
+
+/** Whether the server has recorded a crisis for this session. */
+export async function readCrisisFlag(id: string): Promise<boolean> {
+  try {
+    return (await getRedis().get(crisisKey(id))) !== null
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Records the crisis server-side. Held for SESSION_MAX_AGE so it outlives the
+ * idle window and cannot be shed by simply going quiet for an hour.
+ */
+export async function markCrisisFlag(id: string): Promise<void> {
+  try {
+    await getRedis().set(crisisKey(id), 1, { ex: SESSION_MAX_AGE })
+  } catch {
+    // best-effort; the signed cookie still carries the flag forward
+  }
+}
+
+export async function clearCrisisFlag(id: string): Promise<void> {
+  try {
+    await getRedis().del(crisisKey(id))
+  } catch {
+    // best-effort; the key expires on its own
+  }
+}
+
 export async function deleteTranscript(id: string): Promise<void> {
   try {
     await getRedis().del(transcriptKey(id))

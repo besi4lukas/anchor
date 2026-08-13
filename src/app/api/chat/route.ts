@@ -2,6 +2,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import {
   counterCookie,
+  markCrisisFlag,
+  readCrisisFlag,
   readTranscript,
   sanitizeTranscript,
   verifyCounters,
@@ -14,6 +16,8 @@ import {
 } from '@/lib/session'
 import { ANCHOR_SYSTEM_PROMPT } from '@/lib/anchor-persona'
 import { retrieveContext, buildContextBlock } from '@/lib/rag'
+import { moderateInput, CRISIS_RESPONSE, HARM_RESPONSE } from '@/lib/moderation'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -84,6 +88,18 @@ export async function POST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: 'Message is required' }, { status: 400 })
   }
 
+  // Cheapest gate first, before any transcript read or upstream call.
+  const rateLimit = await checkRateLimit(counters.id)
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many messages. Take a breath and try again shortly.' },
+      {
+        status: 429,
+        headers: { 'Retry-After': String(rateLimit.retryAfter ?? 60) },
+      },
+    )
+  }
+
   // Redis is preferred because it is server-held and cannot be edited, but the
   // client's copy keeps the conversation going when the cache is unavailable.
   const stored = await readTranscript(counters.id)
@@ -101,16 +117,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     message_count: counters.message_count + 2,
   }
 
-  const claudeMessages = [...history, userMessage]
-    .slice(-CONTEXT_WINDOW)
-    .map((m) => ({ role: m.role, content: m.content }))
-
-  // retrieveContext swallows its own failures and returns [], so a retrieval
-  // outage degrades to an unaugmented prompt rather than breaking the chat.
-  const ragChunks = await retrieveContext(message)
-  const contextBlock = buildContextBlock(ragChunks)
-  const systemPrompt = ANCHOR_SYSTEM_PROMPT.replace('{context}', contextBlock)
-
   const persist = (assistant: string) =>
     writeTranscript(
       counters.id,
@@ -124,6 +130,39 @@ export async function POST(req: NextRequest): Promise<Response> {
         },
       ].slice(-MAX_MESSAGES),
     )
+
+  // The cookie and the server record are OR'd: the cookie survives a Redis
+  // outage, the server record survives a client replaying an older cookie.
+  const crisisActive =
+    counters.crisis_flag || (await readCrisisFlag(counters.id))
+  const moderation = await moderateInput(message, crisisActive)
+
+  // Crisis and harm replies are hardcoded — no RAG, no Claude — so the wording
+  // is predictable. They still return through sseResponse, which is what
+  // commits the counters (and the crisis flag) to the signed cookie.
+  if (moderation.isCrisis) {
+    await markCrisisFlag(counters.id)
+    await persist(CRISIS_RESPONSE)
+    return sseResponse(encodeSSE(CRISIS_RESPONSE), {
+      ...nextCounters,
+      crisis_flag: true,
+    })
+  }
+
+  if (moderation.flagged) {
+    await persist(HARM_RESPONSE)
+    return sseResponse(encodeSSE(HARM_RESPONSE), nextCounters)
+  }
+
+  const claudeMessages = [...history, userMessage]
+    .slice(-CONTEXT_WINDOW)
+    .map((m) => ({ role: m.role, content: m.content }))
+
+  // retrieveContext swallows its own failures and returns [], so a retrieval
+  // outage degrades to an unaugmented prompt rather than breaking the chat.
+  const ragChunks = await retrieveContext(message)
+  const contextBlock = buildContextBlock(ragChunks)
+  const systemPrompt = ANCHOR_SYSTEM_PROMPT.replace('{context}', contextBlock)
 
   try {
     const anthropic = getAnthropic()

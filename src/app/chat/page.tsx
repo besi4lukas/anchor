@@ -89,6 +89,20 @@ export default function Chat() {
           body: JSON.stringify({ message: content, messages: history }),
         })
 
+        // A throttled send is a normal outcome, not a connection failure, so it
+        // gets its own wording and the server's Retry-After rather than the
+        // generic reconnecting message.
+        if (res.status === 429) {
+          const retryAfter = Number(res.headers.get('Retry-After'))
+          const wait =
+            Number.isFinite(retryAfter) && retryAfter > 0
+              ? `about ${retryAfter} second${retryAfter === 1 ? '' : 's'}`
+              : 'a moment'
+          setMessages((prev) => prev.slice(0, -1))
+          setError(`That was a lot at once. Try again in ${wait}.`)
+          return
+        }
+
         if (!res.ok) throw new Error('Chat request failed')
 
         const reader = res.body?.getReader()
