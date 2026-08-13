@@ -97,6 +97,13 @@
   .typing-dot {
     animation: typing 1.4s infinite;
   }
+
+  /* The duration is set per-phase from the component; only the property and
+     easing live here so the reduced-motion rule below has something to cancel. */
+  .breathing-orb {
+    transition-property: transform;
+    transition-timing-function: ease-in-out;
+  }
 }
 
 /* The design exposes breathing as a toggle; honour the OS setting instead. */
@@ -105,6 +112,11 @@
   .animate-haze,
   .typing-dot {
     animation: none;
+  }
+
+  /* The countdown and phase label still carry the exercise without the scaling. */
+  .breathing-orb {
+    transition-property: none;
   }
 
   .typing-dot {

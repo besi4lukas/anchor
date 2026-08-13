@@ -18,6 +18,8 @@ import { ANCHOR_SYSTEM_PROMPT } from '@/lib/anchor-persona'
 import { retrieveContext, buildContextBlock } from '@/lib/rag'
 import { moderateInput, CRISIS_RESPONSE, HARM_RESPONSE } from '@/lib/moderation'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { generateCrisisReply } from '@/lib/crisis-support'
+import { CRISIS_WIDGET } from '@/lib/markers'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -47,8 +49,16 @@ function sseResponse(body: BodyInit, counters: SessionCounters): NextResponse {
   return response
 }
 
-function encodeSSE(text: string): string {
-  return `data: ${JSON.stringify({ text })}\n\ndata: [DONE]\n\n`
+/**
+ * Widgets that carry weight travel on their own event rather than as a marker
+ * inside the message text. Model tokens only ever populate `text`, so a reply
+ * cannot fabricate a `widget` no matter what the person types at it.
+ */
+function encodeSSE(text: string, widget?: string): string {
+  const events = [`data: ${JSON.stringify({ text })}\n\n`]
+  if (widget) events.push(`data: ${JSON.stringify({ widget })}\n\n`)
+  events.push('data: [DONE]\n\n')
+  return events.join('')
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -131,19 +141,34 @@ export async function POST(req: NextRequest): Promise<Response> {
       ].slice(-MAX_MESSAGES),
     )
 
+  const claudeMessages = [...history, userMessage]
+    .slice(-CONTEXT_WINDOW)
+    .map((m) => ({ role: m.role, content: m.content }))
+
   // The cookie and the server record are OR'd: the cookie survives a Redis
   // outage, the server record survives a client replaying an older cookie.
   const crisisActive =
     counters.crisis_flag || (await readCrisisFlag(counters.id))
   const moderation = await moderateInput(message, crisisActive)
 
-  // Crisis and harm replies are hardcoded — no RAG, no Claude — so the wording
-  // is predictable. They still return through sseResponse, which is what
-  // commits the counters (and the crisis flag) to the signed cookie.
+  // Crisis replies never use RAG and never stream. The card is emitted from the
+  // branch itself rather than derived from the flag: layer 3 keeps returning
+  // isCrisis for a flagged session, so every reply here carries its own card.
   if (moderation.isCrisis) {
     await markCrisisFlag(counters.id)
-    await persist(CRISIS_RESPONSE)
-    return sseResponse(encodeSSE(CRISIS_RESPONSE), {
+
+    // The turn that discloses a crisis is answered by the hardcoded text, every
+    // time, with no model involved — that moment has to be predictable. Only
+    // the turns after it get a reviewed model reply, so the person is not held
+    // at the same wall of text for the rest of the hour.
+    const isFirstDisclosure = moderation.reason !== 'session_crisis_active'
+
+    const reply = isFirstDisclosure
+      ? CRISIS_RESPONSE
+      : (await generateCrisisReply(claudeMessages)).text
+
+    await persist(reply)
+    return sseResponse(encodeSSE(reply, CRISIS_WIDGET), {
       ...nextCounters,
       crisis_flag: true,
     })
@@ -153,10 +178,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     await persist(HARM_RESPONSE)
     return sseResponse(encodeSSE(HARM_RESPONSE), nextCounters)
   }
-
-  const claudeMessages = [...history, userMessage]
-    .slice(-CONTEXT_WINDOW)
-    .map((m) => ({ role: m.role, content: m.content }))
 
   // retrieveContext swallows its own failures and returns [], so a retrieval
   // outage degrades to an unaugmented prompt rather than breaking the chat.

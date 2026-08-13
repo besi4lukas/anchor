@@ -5,12 +5,17 @@ import { useRouter } from 'next/navigation'
 import { MessageBubble } from '@/components/chat/MessageBubble'
 import { ChatInput } from '@/components/chat/ChatInput'
 import { SessionTimer } from '@/components/chat/SessionTimer'
+import { CrisisResourceCard } from '@/components/chat/ResourceCard'
+import { BoxBreathing } from '@/components/chat/BoxBreathing'
+import { parseMarkers, CRISIS_WIDGET } from '@/lib/markers'
 import { CONTEXT_WINDOW } from '@/lib/session-config'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
   isStreaming?: boolean
+  /** Set only by a server widget event — never inferred from message text. */
+  showCrisisResources?: boolean
 }
 
 function isValidSessionPayload(
@@ -111,6 +116,38 @@ export default function Chat() {
         if (!reader) throw new Error('No response stream')
 
         let accumulated = ''
+
+        // An event carries either a text token or a widget name. Widgets come
+        // from the server's own branch, never from model output, which is what
+        // stops a reply from talking its way into rendering a crisis card.
+        const applyEvent = (payload: string) => {
+          if (payload === '[DONE]') return
+
+          let parsed: { text?: unknown; widget?: unknown }
+          try {
+            parsed = JSON.parse(payload)
+          } catch {
+            return // skip malformed SSE lines
+          }
+
+          if (typeof parsed.text === 'string') accumulated += parsed.text
+          const isCrisisWidget = parsed.widget === CRISIS_WIDGET
+          if (typeof parsed.text !== 'string' && !isCrisisWidget) return
+
+          setMessages((prev) => {
+            const updated = [...prev]
+            const last = updated[updated.length - 1]
+            if (last.role !== 'assistant') return prev
+            updated[updated.length - 1] = {
+              ...last,
+              content: accumulated,
+              isStreaming: false,
+              showCrisisResources: last.showCrisisResources || isCrisisWidget,
+            }
+            return updated
+          })
+        }
+
         let sseBuffer = ''
         while (true) {
           const { done, value } = await reader.read()
@@ -122,56 +159,13 @@ export default function Chat() {
 
           for (const line of parts) {
             if (!line.startsWith('data: ')) continue
-            const payload = line.slice(6).trim()
-
-            if (payload === '[DONE]') continue
-
-            try {
-              const parsed = JSON.parse(payload)
-              accumulated += parsed.text
-              setMessages((prev) => {
-                const updated = [...prev]
-                const last = updated[updated.length - 1]
-                if (last.role === 'assistant') {
-                  updated[updated.length - 1] = {
-                    ...last,
-                    content: accumulated,
-                    isStreaming: false,
-                  }
-                }
-                return updated
-              })
-            } catch {
-              // skip malformed SSE lines
-            }
+            applyEvent(line.slice(6).trim())
           }
         }
 
-        if (sseBuffer.trim()) {
-          const line = sseBuffer.trim()
-          if (line.startsWith('data: ')) {
-            const payload = line.slice(6).trim()
-            if (payload !== '[DONE]') {
-              try {
-                const parsed = JSON.parse(payload)
-                accumulated += parsed.text
-                setMessages((prev) => {
-                  const updated = [...prev]
-                  const last = updated[updated.length - 1]
-                  if (last.role === 'assistant') {
-                    updated[updated.length - 1] = {
-                      ...last,
-                      content: accumulated,
-                      isStreaming: false,
-                    }
-                  }
-                  return updated
-                })
-              } catch {
-                // skip malformed final line
-              }
-            }
-          }
+        const trailing = sseBuffer.trim()
+        if (trailing.startsWith('data: ')) {
+          applyEvent(trailing.slice(6).trim())
         }
 
         setMessages((prev) => {
@@ -324,14 +318,32 @@ export default function Chat() {
               aria-label="Conversation"
               className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6"
             >
-              {messages.map((msg, i) => (
-                <MessageBubble
-                  key={i}
-                  role={msg.role}
-                  content={msg.content}
-                  isStreaming={msg.isStreaming}
-                />
-              ))}
+              {messages.map((msg, i) => {
+                if (msg.role !== 'assistant') {
+                  return (
+                    <MessageBubble
+                      key={i}
+                      role={msg.role}
+                      content={msg.content}
+                      isStreaming={msg.isStreaming}
+                    />
+                  )
+                }
+
+                const { content, showBreathing } = parseMarkers(msg.content)
+
+                return (
+                  <div key={i} className="flex flex-col gap-3">
+                    <MessageBubble
+                      role={msg.role}
+                      content={content}
+                      isStreaming={msg.isStreaming}
+                    />
+                    {msg.showCrisisResources && <CrisisResourceCard />}
+                    {showBreathing && <BoxBreathing />}
+                  </div>
+                )
+              })}
               {error && (
                 <p
                   data-testid="chat-error"

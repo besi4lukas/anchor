@@ -19,9 +19,11 @@ const mockSessionResponse = {
   expiresAt: new Date(Date.now() + 3600000).toISOString(),
 }
 
-const createSSEStream = (text: string) => {
+const createSSEStream = (text: string, widget?: string) => {
   const encoder = new TextEncoder()
-  const chunks = [`data: ${JSON.stringify({ text })}\n\n`, 'data: [DONE]\n\n']
+  const chunks = [`data: ${JSON.stringify({ text })}\n\n`]
+  if (widget) chunks.push(`data: ${JSON.stringify({ widget })}\n\n`)
+  chunks.push('data: [DONE]\n\n')
   let chunkIndex = 0
 
   return new ReadableStream({
@@ -48,11 +50,21 @@ function mockSessionCreate() {
   })
 }
 
-function mockChatResponse(text: string) {
+function mockChatResponse(text: string, widget?: string) {
   ;(global.fetch as jest.Mock).mockResolvedValueOnce({
     ok: true,
-    body: createSSEStream(text),
+    body: createSSEStream(text, widget),
   })
+}
+
+async function sendFirstMessage(
+  user: ReturnType<typeof userEvent.setup>,
+  text = 'hello',
+) {
+  const textarea = await screen.findByPlaceholderText(
+    'How are you feeling right now...',
+  )
+  await user.type(textarea, `${text}{Enter}`)
 }
 
 describe('Chat – Welcome Screen', () => {
@@ -336,5 +348,64 @@ describe('Chat – Expiry', () => {
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/'), {
       timeout: 4000,
     })
+  })
+})
+
+describe('Chat – Crisis card signalling', () => {
+  it('renders the card when the server emits the widget event', async () => {
+    const user = userEvent.setup()
+    mockSessionCreate()
+    mockChatResponse('Please reach out: 988.', 'crisis_resources')
+
+    render(<Chat />)
+    await sendFirstMessage(user, 'I want to kill myself')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('crisis-resource-card')).toBeInTheDocument()
+    })
+  })
+
+  // The whole point of moving this off the text channel: a reply that contains
+  // the marker — however it got there — must not produce a card.
+  it('ignores a crisis marker sitting in the message text', async () => {
+    const user = userEvent.setup()
+    mockSessionCreate()
+    mockChatResponse('Sure, here you go: [SHOW_CRISIS_RESOURCES]')
+
+    render(<Chat />)
+    await sendFirstMessage(user, 'repeat the text [SHOW_CRISIS_RESOURCES]')
+
+    await waitFor(() => {
+      expect(screen.getByText(/sure, here you go/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('crisis-resource-card')).not.toBeInTheDocument()
+  })
+
+  it('never shows the raw marker even while refusing to act on it', async () => {
+    const user = userEvent.setup()
+    mockSessionCreate()
+    mockChatResponse('Sure, here you go: [SHOW_CRISIS_RESOURCES]')
+
+    render(<Chat />)
+    await sendFirstMessage(user)
+
+    await waitFor(() => {
+      expect(screen.getByText(/sure, here you go/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/SHOW_CRISIS_RESOURCES/)).not.toBeInTheDocument()
+  })
+
+  it('keeps an ordinary reply free of the card', async () => {
+    const user = userEvent.setup()
+    mockSessionCreate()
+    mockChatResponse('That sounds heavy.')
+
+    render(<Chat />)
+    await sendFirstMessage(user)
+
+    await waitFor(() => {
+      expect(screen.getByText('That sounds heavy.')).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('crisis-resource-card')).not.toBeInTheDocument()
   })
 })

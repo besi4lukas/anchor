@@ -7,9 +7,26 @@ const hasCredentials =
 
 const suite = hasCredentials ? describe : describe.skip
 
+/**
+ * retrieveContext runs with maxRetries: 0 so a stalled embedding cannot hang a
+ * real chat — correct in production, but it means one transient network blip
+ * here reads as "retrieval is broken" rather than "the network hiccupped". One
+ * retry keeps the signal (retrieval genuinely works against the live index)
+ * without failing the suite over a single dropped connection.
+ */
+async function retrieveWithOneRetry(
+  ...args: Parameters<typeof retrieveContext>
+): Promise<Awaited<ReturnType<typeof retrieveContext>>> {
+  const first = await retrieveContext(...args)
+  if (first.length > 0) return first
+  return retrieveContext(...args)
+}
+
 suite('retrieveContext', () => {
   it('returns relevant chunks for breathing query', async () => {
-    const chunks = await retrieveContext('I need help calming my breathing')
+    const chunks = await retrieveWithOneRetry(
+      'I need help calming my breathing',
+    )
     expect(chunks.length).toBeGreaterThan(0)
     chunks.forEach((c) => {
       // Matches retrieveContext's default minScore, not the 0.7 the ticket
