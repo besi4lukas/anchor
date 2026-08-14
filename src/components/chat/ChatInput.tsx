@@ -77,7 +77,10 @@ export function ChatInput({
         onClick={send}
         disabled={!canSend}
         aria-label="Send message"
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#1A1A2E] text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1A2E] disabled:cursor-not-allowed disabled:opacity-30"
+        // Matches the mint the wrapper's border turns on focus, which is also
+        // the accent the primary buttons elsewhere use. Dark icon rather than
+        // white: on a colour this light, white would not be readable.
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#A6EEBF] text-[#1A1A2E] transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1A2E] disabled:cursor-not-allowed disabled:opacity-30"
       >
         <ArrowUp aria-hidden className="h-5 w-5" />
       </button>

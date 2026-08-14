@@ -39,40 +39,91 @@ export interface RagChunk {
  * out at 0.567 and genuine emotional phrasing ("I feel anxious right now")
  * starts at 0.648 — 0.6 is the gap between them.
  */
+export interface Retrieval {
+  chunks: RagChunk[]
+  /**
+   * The embedding the search ran on, handed back so callers can reuse it.
+   * Null when embedding failed, which callers must treat as "unknown" rather
+   * than as a signal about the message.
+   */
+  vector: number[] | null
+}
+
+/**
+ * Embeds a batch of texts. Returns null rather than throwing.
+ *
+ * The timeout is per call rather than per client because the two callers want
+ * opposite things: a single chat message must give up fast so a stalled
+ * embedding cannot hold up a reply, while the topic guard's reference phrases
+ * are a one-off batch of twenty that legitimately takes longer.
+ */
+export async function embedTexts(
+  texts: string[],
+  timeoutMs: number = EMBED_TIMEOUT_MS,
+): Promise<number[][] | null> {
+  try {
+    const response = await getOpenAI().embeddings.create(
+      { model: EMBED_MODEL, input: texts },
+      { timeout: timeoutMs, maxRetries: 0 },
+    )
+    return response.data.map((d) => d.embedding)
+  } catch (error) {
+    console.error('[RAG] Embedding failed:', error)
+    return null
+  }
+}
+
 export async function retrieveContext(
   query: string,
   topK = 3,
   minScore = 0.6,
 ): Promise<RagChunk[]> {
+  return (await retrieveWithVector(query, topK, minScore)).chunks
+}
+
+/**
+ * Same work as retrieveContext, but the query embedding comes back with the
+ * results. The topic guard needs a vector for this message and the search has
+ * already paid for one, so handing it over makes that check free rather than a
+ * second call to the same endpoint with the same input.
+ */
+export async function retrieveWithVector(
+  query: string,
+  topK = 3,
+  minScore = 0.6,
+): Promise<Retrieval> {
   return withDeadline(
     runRetrieval(query, topK, minScore),
     RETRIEVAL_BUDGET_MS,
-    [],
+    { chunks: [], vector: null },
     '[RAG] Retrieval',
   )
 }
 
+/**
+ * Upstash reports COSINE similarity remapped to [0,1] as (1 + cos) / 2, so the
+ * usable range is compressed into the top half of the scale: unrelated text
+ * still scores ~0.55. Measured against the seeded index, off-topic queries top
+ * out at 0.567 and genuine emotional phrasing ("I feel anxious right now")
+ * starts at 0.648 — 0.6 is the gap between them.
+ */
 async function runRetrieval(
   query: string,
   topK: number,
   minScore: number,
-): Promise<RagChunk[]> {
-  try {
-    const openai = getOpenAI()
-    const embeddingResponse = await openai.embeddings.create({
-      model: EMBED_MODEL,
-      input: query,
-    })
-    const vector = embeddingResponse.data[0].embedding
+): Promise<Retrieval> {
+  const embeddings = await embedTexts([query])
+  const vector = embeddings?.[0] ?? null
+  if (!vector) return { chunks: [], vector: null }
 
-    const index = getVectorIndex()
-    const results = await index.query({
+  try {
+    const results = await getVectorIndex().query({
       vector,
       topK,
       includeMetadata: true,
     })
 
-    return results
+    const chunks = results
       .filter((r) => (r.score ?? 0) >= minScore)
       .map((r) => ({
         id: String(r.id),
@@ -80,9 +131,13 @@ async function runRetrieval(
         content: String((r.metadata as Record<string, unknown>)?.content ?? ''),
         source: String((r.metadata as Record<string, unknown>)?.source ?? ''),
       }))
+
+    // The vector survives a failed search: the topic guard only needs the
+    // embedding, and losing the knowledge base is no reason to lose the gate.
+    return { chunks, vector }
   } catch (error) {
-    console.error('[RAG] Retrieval failed:', error)
-    return []
+    console.error('[RAG] Vector search failed:', error)
+    return { chunks: [], vector }
   }
 }
 

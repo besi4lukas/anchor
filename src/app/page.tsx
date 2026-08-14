@@ -36,14 +36,6 @@ export default function Landing() {
 
       <header className="relative flex shrink-0 items-center justify-between gap-4 px-6 py-[clamp(10px,2.4svh,34px)] sm:px-14">
         <div className="flex items-center gap-[11px]">
-          <Image
-            src="/anchor-ai.png"
-            alt=""
-            aria-hidden
-            width={26}
-            height={26}
-            className="h-[clamp(18px,2.6svh,26px)] w-[clamp(18px,2.6svh,26px)] mix-blend-multiply"
-          />
           <span className="font-newsreader text-[clamp(18px,2.3svh,21px)] tracking-[0.01em] text-anchor-brand">
             Anchor
           </span>

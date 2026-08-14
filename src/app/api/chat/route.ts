@@ -15,12 +15,17 @@ import {
   type SessionCounters,
 } from '@/lib/session'
 import { ANCHOR_SYSTEM_PROMPT } from '@/lib/anchor-persona'
-import { retrieveContext, buildContextBlock } from '@/lib/rag'
+import { retrieveWithVector, buildContextBlock } from '@/lib/rag'
 import { moderateInput, CRISIS_RESPONSE, HARM_RESPONSE } from '@/lib/moderation'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { generateCrisisReply } from '@/lib/crisis-support'
 import { CRISIS_WIDGET, BREATHING_WIDGET, stripMarkers } from '@/lib/markers'
 import { parseBody, ChatInputSchema } from '@/lib/validation'
+import {
+  classifyTopic,
+  getTopicAnchors,
+  OFF_TOPIC_RESPONSE,
+} from '@/lib/topic-guard'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -127,9 +132,30 @@ export async function POST(req: NextRequest): Promise<Response> {
     )
   }
 
+  // Everything the reply needs before Claude can start, run at once.
+  //
+  // These four were serial, which meant waiting for their sum — moderation
+  // (0.4-1.4s) and then retrieval (0.25-0.7s) and then the rest. None of them
+  // reads another's output: all four take the incoming message or the session
+  // id and nothing else, so the wait is now the slowest one rather than the
+  // total. That also makes the topic guard free in wall-clock time; it finishes
+  // long before moderation does.
+  //
+  // Moderation is chained behind the crisis-flag read because layer 3 needs to
+  // know whether this session is already flagged. The cost of a crisis or
+  // off-topic message is one retrieval whose result gets discarded — a fraction
+  // of a cent on the rare path, to take roughly half a second off the common one.
+  const [moderation, retrieval, anchors, stored] = await Promise.all([
+    readCrisisFlag(counters.id).then((serverFlag) =>
+      moderateInput(message, counters.crisis_flag || serverFlag),
+    ),
+    retrieveWithVector(message),
+    getTopicAnchors(),
+    readTranscript(counters.id),
+  ])
+
   // Redis is preferred because it is server-held and cannot be edited, but the
   // client's copy keeps the conversation going when the cache is unavailable.
-  const stored = await readTranscript(counters.id)
   const rawHistory = stored ?? clientHistory
 
   // Markers are a transport detail of an earlier design, and a transcript
@@ -172,12 +198,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     .slice(-CONTEXT_WINDOW)
     .map((m) => ({ role: m.role, content: m.content }))
 
-  // The cookie and the server record are OR'd: the cookie survives a Redis
-  // outage, the server record survives a client replaying an older cookie.
-  const crisisActive =
-    counters.crisis_flag || (await readCrisisFlag(counters.id))
-  const moderation = await moderateInput(message, crisisActive)
-
   // Crisis replies never use RAG and never stream. The card is emitted from the
   // branch itself rather than derived from the flag: layer 3 keeps returning
   // isCrisis for a flagged session, so every reply here carries its own card.
@@ -206,10 +226,20 @@ export async function POST(req: NextRequest): Promise<Response> {
     return sseResponse(encodeSSE(HARM_RESPONSE), nextCounters)
   }
 
-  // retrieveContext swallows its own failures and returns [], so a retrieval
-  // outage degrades to an unaugmented prompt rather than breaking the chat.
-  const ragChunks = await retrieveContext(message)
-  const contextBlock = buildContextBlock(ragChunks)
+  // Runs only after crisis and harm have had their say. Someone in crisis may
+  // well write something that scores as off-topic, and turning them away would
+  // be the worst thing this route could do.
+  const topic = classifyTopic(message, retrieval.vector, anchors)
+  if (!topic.onTopic) {
+    // Decision and score only. The message itself is never logged.
+    console.info(`[TopicGuard] declined (margin ${topic.margin.toFixed(3)})`)
+    await persist(OFF_TOPIC_RESPONSE)
+    return sseResponse(encodeSSE(OFF_TOPIC_RESPONSE), nextCounters)
+  }
+
+  // Retrieval swallows its own failures and yields no chunks, so an outage
+  // degrades to an unaugmented prompt rather than breaking the chat.
+  const contextBlock = buildContextBlock(retrieval.chunks)
   const systemPrompt = ANCHOR_SYSTEM_PROMPT.replace('{context}', contextBlock)
 
   try {
