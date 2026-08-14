@@ -19,7 +19,8 @@ import { retrieveContext, buildContextBlock } from '@/lib/rag'
 import { moderateInput, CRISIS_RESPONSE, HARM_RESPONSE } from '@/lib/moderation'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { generateCrisisReply } from '@/lib/crisis-support'
-import { CRISIS_WIDGET } from '@/lib/markers'
+import { CRISIS_WIDGET, BREATHING_WIDGET, stripMarkers } from '@/lib/markers'
+import { parseBody, ChatInputSchema } from '@/lib/validation'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -27,6 +28,19 @@ export const dynamic = 'force-dynamic'
 const STREAM_TIMEOUT_MS = 15_000
 const FALLBACK_MESSAGE =
   'Anchor is taking a short breather. Please try again in a moment.'
+
+/**
+ * The breathing timer is requested through tool use rather than by asking the
+ * model to append a magic string. Format compliance is a hope; a tool call is a
+ * structured decision that either happened or did not. It takes no arguments —
+ * the widget is self-contained, and the tool exists purely to be called.
+ */
+const BREATHING_TOOL: Anthropic.Tool = {
+  name: 'show_breathing_exercise',
+  description:
+    'Display an interactive guided box-breathing timer directly below your message. Call this whenever you suggest a breathing exercise, so the person can follow along with on-screen timing instead of reading counts. Describe the exercise briefly in your message as well; the timer handles the counting.',
+  input_schema: { type: 'object', properties: {} },
+}
 
 function getAnthropic(): Anthropic {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -84,19 +98,22 @@ export async function POST(req: NextRequest): Promise<Response> {
     )
   }
 
-  let message = ''
-  let clientHistory: ChatMessage[] = []
-  try {
-    const body = await req.json()
-    message = typeof body.message === 'string' ? body.message.trim() : ''
-    clientHistory = sanitizeTranscript(body.messages, CONTEXT_WINDOW)
-  } catch {
-    message = ''
-  }
+  const raw: unknown = await req.json().catch(() => null)
 
-  if (!message) {
-    return NextResponse.json({ error: 'Message is required' }, { status: 400 })
+  const parsed = parseBody(ChatInputSchema, raw)
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 })
   }
+  const message = parsed.data.message
+
+  // The transcript stays on sanitizeTranscript rather than a schema. It is a
+  // best-effort fallback for when Redis is unreachable, so bounding it — drop
+  // bad turns, cap the length, keep the rest — serves the person better than
+  // rejecting the whole request because one entry was malformed.
+  const clientHistory: ChatMessage[] = sanitizeTranscript(
+    (raw as { messages?: unknown } | null)?.messages,
+    CONTEXT_WINDOW,
+  )
 
   // Cheapest gate first, before any transcript read or upstream call.
   const rateLimit = await checkRateLimit(counters.id)
@@ -113,7 +130,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Redis is preferred because it is server-held and cannot be edited, but the
   // client's copy keeps the conversation going when the cache is unavailable.
   const stored = await readTranscript(counters.id)
-  const history = stored ?? clientHistory
+  const rawHistory = stored ?? clientHistory
+
+  // Markers are a transport detail of an earlier design, and a transcript
+  // written before this change can still contain them. Scrubbing on the way in
+  // keeps them out of Claude's context, so it never sees its own old markers
+  // replayed and reads them as a house style worth continuing.
+  const history = rawHistory.map((m) =>
+    m.role === 'assistant' ? { ...m, content: stripMarkers(m.content) } : m,
+  )
 
   const userMessage: ChatMessage = {
     role: 'user',
@@ -127,6 +152,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     message_count: counters.message_count + 2,
   }
 
+  // Stripped on the way out too, so the stored transcript never accumulates
+  // them in the first place.
   const persist = (assistant: string) =>
     writeTranscript(
       counters.id,
@@ -135,7 +162,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         userMessage,
         {
           role: 'assistant' as const,
-          content: assistant,
+          content: stripMarkers(assistant),
           timestamp: Date.now(),
         },
       ].slice(-MAX_MESSAGES),
@@ -195,6 +222,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         max_tokens: 300,
         system: systemPrompt,
         messages: claudeMessages,
+        tools: [BREATHING_TOOL],
       },
       { signal: abortController.signal, timeout: STREAM_TIMEOUT_MS },
     )
@@ -207,6 +235,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         try {
           for await (const event of stream) {
             if (abortController.signal.aborted) break
+
             if (
               event.type === 'content_block_delta' &&
               event.delta.type === 'text_delta'
@@ -215,6 +244,22 @@ export async function POST(req: NextRequest): Promise<Response> {
               fullText += token
               controller.enqueue(
                 encoder.encode(`data: ${JSON.stringify({ text: token })}\n\n`),
+              )
+            }
+
+            // A tool call is a structured content block, not prose, so this is
+            // a decision Claude made rather than a string it happened to type.
+            // No tool_result goes back: the tool draws a widget and has no
+            // output the conversation needs.
+            if (
+              event.type === 'content_block_start' &&
+              event.content_block.type === 'tool_use' &&
+              event.content_block.name === BREATHING_TOOL.name
+            ) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ widget: BREATHING_WIDGET })}\n\n`,
+                ),
               )
             }
           }

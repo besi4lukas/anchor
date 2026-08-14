@@ -1,34 +1,26 @@
 /**
- * Inline widget signalling.
+ * Widget signalling.
  *
- * There are two channels, deliberately unequal in trust.
+ * Both widgets are now announced by the server on their own SSE event, never by
+ * anything inside the message text. The crisis card is emitted from the branch
+ * that produced the crisis response; the breathing timer is emitted when Claude
+ * calls the show_breathing_exercise tool, which arrives as a structured
+ * content block rather than as prose. Model tokens only ever populate `text`,
+ * so no reply can talk its way into rendering either one.
  *
- * Cosmetic widgets travel as markers inside the message text: Claude appends
- * one, the renderer strips it. The worst a manipulated model can do on this
- * channel is summon a breathing timer nobody asked for.
- *
- * The crisis card does not travel this way. It is emitted by the server as its
- * own SSE event from the branch that produced the crisis response, so no amount
- * of coaxing the model can make one appear. The crisis marker still exists here
- * for one reason: if Claude ever emits the literal string, it gets stripped
- * before display rather than shown to somebody as raw text.
+ * The marker strings survive for one job only: stripping. Earlier versions
+ * asked Claude to append them, so they may appear in a transcript replayed from
+ * Redis, and a model can always be coaxed into typing one. Either way they get
+ * removed rather than shown to somebody as raw text.
  */
 export const BREATHING_MARKER = '[SHOW_BREATHING]'
 export const CRISIS_RESOURCES_MARKER = '[SHOW_CRISIS_RESOURCES]'
 
-/** Name carried by the trusted SSE widget event. */
+/** Names carried by the trusted SSE widget events. */
 export const CRISIS_WIDGET = 'crisis_resources'
+export const BREATHING_WIDGET = 'breathing_exercise'
 
 const MARKERS = [BREATHING_MARKER, CRISIS_RESOURCES_MARKER]
-
-export interface ParsedMessage {
-  content: string
-  /**
-   * Requested by the model. There is deliberately no crisis equivalent — that
-   * signal only ever arrives out of band.
-   */
-  showBreathing: boolean
-}
 
 /**
  * Responses stream a token at a time, so a marker spends a moment on screen as
@@ -46,16 +38,11 @@ function stripPartialMarker(text: string): string {
     : text
 }
 
-export function parseMarkers(raw: string): ParsedMessage {
-  const showBreathing = raw.includes(BREATHING_MARKER)
-
+/** Removes every marker, complete or still arriving, and reports nothing. */
+export function stripMarkers(raw: string): string {
   let content = raw
   for (const marker of MARKERS) {
     content = content.split(marker).join('')
   }
-
-  return {
-    content: stripPartialMarker(content).trimEnd(),
-    showBreathing,
-  }
+  return stripPartialMarker(content).trimEnd()
 }

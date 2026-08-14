@@ -1,22 +1,32 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { m } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { MessageBubble } from '@/components/chat/MessageBubble'
 import { ChatInput } from '@/components/chat/ChatInput'
 import { SessionTimer } from '@/components/chat/SessionTimer'
 import { CrisisResourceCard } from '@/components/chat/ResourceCard'
+import { MotionProvider } from '@/components/chat/MotionProvider'
 import { BoxBreathing } from '@/components/chat/BoxBreathing'
-import { parseMarkers, CRISIS_WIDGET } from '@/lib/markers'
+import { stripMarkers, CRISIS_WIDGET, BREATHING_WIDGET } from '@/lib/markers'
 import { CONTEXT_WINDOW } from '@/lib/session-config'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
   isStreaming?: boolean
-  /** Set only by a server widget event — never inferred from message text. */
+  /** Both set only by server widget events — never inferred from message text. */
   showCrisisResources?: boolean
+  showBreathing?: boolean
 }
+
+/** Opacity only — no movement, nothing that can push surrounding text around. */
+const WIDGET_ENTRY = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  transition: { duration: 0.2, ease: 'easeOut' },
+} as const
 
 function isValidSessionPayload(
   data: unknown,
@@ -35,6 +45,7 @@ export default function Chat() {
   const router = useRouter()
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
+  const [extended, setExtended] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -59,6 +70,7 @@ export default function Chat() {
       }
       setSessionId(data.sessionId)
       setExpiresAt(data.expiresAt)
+      setExtended(false)
     } catch {
       setError('Failed to start session. Please refresh.')
     }
@@ -132,7 +144,9 @@ export default function Chat() {
 
           if (typeof parsed.text === 'string') accumulated += parsed.text
           const isCrisisWidget = parsed.widget === CRISIS_WIDGET
-          if (typeof parsed.text !== 'string' && !isCrisisWidget) return
+          const isBreathingWidget = parsed.widget === BREATHING_WIDGET
+          const isWidget = isCrisisWidget || isBreathingWidget
+          if (typeof parsed.text !== 'string' && !isWidget) return
 
           setMessages((prev) => {
             const updated = [...prev]
@@ -143,6 +157,7 @@ export default function Chat() {
               content: accumulated,
               isStreaming: false,
               showCrisisResources: last.showCrisisResources || isCrisisWidget,
+              showBreathing: last.showBreathing || isBreathingWidget,
             }
             return updated
           })
@@ -219,6 +234,24 @@ export default function Chat() {
     router.push('/')
   }, [router])
 
+  // One extension per session, so the offer retires the moment it is taken —
+  // including the 409 case, where the server is telling us it was already spent.
+  const handleExtend = useCallback((newExpiry: string) => {
+    setExtended(true)
+    setExpiresAt(newExpiry)
+  }, [])
+
+  // Each widget is rendered once, against the most recent message that asked
+  // for it. In crisis mode every reply carries a card, and left alone that
+  // stacks a wall of identical amber blocks down the transcript; anchoring to
+  // the latest keeps the resources beside the newest message, where they are
+  // actually useful.
+  const lastIndexWhere = (predicate: (m: Message) => boolean) =>
+    messages.reduce((found, m, i) => (predicate(m) ? i : found), -1)
+
+  const latestCrisisIndex = lastIndexWhere((m) => !!m.showCrisisResources)
+  const latestBreathingIndex = lastIndexWhere((m) => !!m.showBreathing)
+
   if (!sessionId) {
     if (error) {
       return (
@@ -270,113 +303,129 @@ export default function Chat() {
   )
 
   return (
-    // h-dvh + overflow-hidden makes the transcript the only scrolling region,
-    // so the header stays put however long the conversation gets.
-    <div className="flex h-dvh flex-col overflow-hidden bg-[#F8FAFC]">
-      <header className="z-10 flex shrink-0 items-center justify-between border-b border-gray-100 bg-white/80 px-4 py-2 backdrop-blur-sm">
-        <button
-          type="button"
-          onClick={handleRestart}
-          className="rounded-lg px-2 py-2 font-serif text-lg font-medium text-[#1A1A2E] transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1A2E]"
-        >
-          Anchor
-        </button>
-        <div className="flex items-center gap-2">
-          {expiresAt && (
-            <SessionTimer expiresAt={expiresAt} onExpire={handleExpire} />
-          )}
+    <MotionProvider>
+      {/* h-dvh + overflow-hidden makes the transcript the only scrolling
+          region, so the header stays put however long the conversation gets. */}
+      <div className="flex h-dvh flex-col overflow-hidden bg-[#F8FAFC]">
+        <header className="z-10 flex shrink-0 items-center justify-between border-b border-gray-100 bg-white/80 px-4 py-2 backdrop-blur-sm">
           <button
             type="button"
-            onClick={handleExit}
-            className="rounded-lg px-2 py-3 text-xs font-medium text-gray-600 transition-colors hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1A2E]"
+            onClick={handleRestart}
+            className="rounded-lg px-2 py-2 font-serif text-lg font-medium text-[#1A1A2E] transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1A2E]"
           >
-            Clear &amp; Exit
+            Anchor
           </button>
-        </div>
-      </header>
-
-      {messages.length === 0 ? (
-        <main className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
-          <h1 className="mb-6 font-serif text-[40px] font-medium tracking-tight text-[#1A1A2E]">
-            Hey Stranger!
-          </h1>
-          <div className="w-full max-w-3xl">
-            <ChatInput
-              onSend={handleSend}
-              disabled={isLoading}
-              placeholder="How are you feeling right now..."
-            />
-          </div>
-        </main>
-      ) : (
-        <main className="flex min-h-0 flex-1 flex-col">
-          <h1 className="sr-only">Your Anchor session</h1>
-          <div className="flex-1 overflow-y-auto">
-            <div
-              role="log"
-              aria-live="polite"
-              aria-label="Conversation"
-              className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6"
+          <div className="flex items-center gap-2">
+            {expiresAt && (
+              <SessionTimer
+                expiresAt={expiresAt}
+                onExpire={handleExpire}
+                extended={extended}
+                onExtend={handleExtend}
+              />
+            )}
+            <button
+              type="button"
+              onClick={handleExit}
+              className="rounded-lg px-2 py-3 text-xs font-medium text-gray-600 transition-colors hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1A2E]"
             >
-              {messages.map((msg, i) => {
-                if (msg.role !== 'assistant') {
-                  return (
-                    <MessageBubble
-                      key={i}
-                      role={msg.role}
-                      content={msg.content}
-                      isStreaming={msg.isStreaming}
-                    />
-                  )
-                }
-
-                const { content, showBreathing } = parseMarkers(msg.content)
-
-                return (
-                  <div key={i} className="flex flex-col gap-3">
-                    <MessageBubble
-                      role={msg.role}
-                      content={content}
-                      isStreaming={msg.isStreaming}
-                    />
-                    {msg.showCrisisResources && <CrisisResourceCard />}
-                    {showBreathing && <BoxBreathing />}
-                  </div>
-                )
-              })}
-              {error && (
-                <p
-                  data-testid="chat-error"
-                  role="status"
-                  className="text-center text-xs text-orange-700"
-                >
-                  {error}
-                </p>
-              )}
-              <div ref={bottomRef} />
-            </div>
+              Clear &amp; Exit
+            </button>
           </div>
+        </header>
 
-          <div className="shrink-0 bg-[#F8FAFC] px-4 pb-4 pt-3">
-            <div className="mx-auto max-w-3xl">
+        {messages.length === 0 ? (
+          <main className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
+            <h1 className="mb-6 font-serif text-[40px] font-medium tracking-tight text-[#1A1A2E]">
+              Hey Stranger!
+            </h1>
+            <div className="w-full max-w-3xl">
               <ChatInput
                 onSend={handleSend}
                 disabled={isLoading}
-                placeholder={
-                  hasAssistantResponded
-                    ? 'Reply...'
-                    : 'How are you feeling right now...'
-                }
+                placeholder="How are you feeling right now..."
               />
-              {hasAssistantResponded && (
-                <p className="mt-3 text-center text-[13px] text-gray-600">
-                  Anchor can make mistakes. If it is an emergency call 911
-                </p>
-              )}
             </div>
-          </div>
-        </main>
-      )}
-    </div>
+          </main>
+        ) : (
+          <main className="flex min-h-0 flex-1 flex-col">
+            <h1 className="sr-only">Your Anchor session</h1>
+            <div className="flex-1 overflow-y-auto">
+              <div
+                role="log"
+                aria-live="polite"
+                aria-label="Conversation"
+                className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6"
+              >
+                {messages.map((msg, i) => {
+                  if (msg.role !== 'assistant') {
+                    return (
+                      <MessageBubble
+                        key={i}
+                        role={msg.role}
+                        content={msg.content}
+                        isStreaming={msg.isStreaming}
+                      />
+                    )
+                  }
+
+                  return (
+                    <div key={i} className="flex flex-col gap-3">
+                      <MessageBubble
+                        role={msg.role}
+                        content={stripMarkers(msg.content)}
+                        isStreaming={msg.isStreaming}
+                      />
+                      {/* Widgets fade without moving. They arrive under a message
+                        that has just settled, and sliding a second block would
+                        read as the page still loading. */}
+                      {i === latestCrisisIndex && (
+                        <m.div {...WIDGET_ENTRY}>
+                          <CrisisResourceCard />
+                        </m.div>
+                      )}
+                      {i === latestBreathingIndex && (
+                        <m.div {...WIDGET_ENTRY}>
+                          <BoxBreathing />
+                        </m.div>
+                      )}
+                    </div>
+                  )
+                })}
+                {error && (
+                  <p
+                    data-testid="chat-error"
+                    role="status"
+                    className="text-center text-xs text-orange-700"
+                  >
+                    {error}
+                  </p>
+                )}
+                <div ref={bottomRef} />
+              </div>
+            </div>
+
+            <div className="shrink-0 bg-[#F8FAFC] px-4 pb-4 pt-3">
+              <div className="mx-auto max-w-3xl">
+                <ChatInput
+                  onSend={handleSend}
+                  disabled={isLoading}
+                  placeholder={
+                    hasAssistantResponded
+                      ? 'Reply...'
+                      : 'How are you feeling right now...'
+                  }
+                />
+                {hasAssistantResponded && (
+                  <p className="mt-3 text-center text-[13px] text-gray-600">
+                    Anchor can make mistakes. If it is an emergency call 911
+                  </p>
+                )}
+              </div>
+            </div>
+          </main>
+        )}
+      </div>
+    </MotionProvider>
   )
 }

@@ -1,11 +1,33 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, act } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom'
 import { CrisisResourceCard } from '@/components/chat/ResourceCard'
 
+// userEvent.setup() installs its own clipboard stub, and the property is
+// getter-only, so these have to be defined after setup rather than assigned.
+function stubClipboard() {
+  const writeText = jest.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText },
+    configurable: true,
+  })
+  return writeText
+}
+
+function removeClipboard() {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: undefined,
+    configurable: true,
+  })
+}
+
 describe('CrisisResourceCard', () => {
+  // Task.md asserts a single match for /988/. The number now appears both in
+  // the service name and as the selectable dial string, which is the point of
+  // showing it — so this checks presence rather than uniqueness.
   it('shows all three resources', () => {
     render(<CrisisResourceCard />)
-    expect(screen.getByText(/988/)).toBeInTheDocument()
+    expect(screen.getAllByText(/988/).length).toBeGreaterThan(0)
     expect(screen.getByText(/Crisis Text Line/)).toBeInTheDocument()
     expect(screen.getByText(/SAMHSA/)).toBeInTheDocument()
   })
@@ -62,6 +84,58 @@ describe('CrisisResourceCard', () => {
     const link = screen.getByTestId('international-helpline-link')
     expect(link).toHaveAttribute('href', 'https://findahelpline.com')
     expect(link).toHaveTextContent(/outside the us/i)
+  })
+
+  // tel: and sms: do nothing on a desktop browser, so the number has to be
+  // readable and copyable rather than only tappable.
+  it('prints every number as selectable text', () => {
+    render(<CrisisResourceCard />)
+    expect(screen.getByText('988')).toBeInTheDocument()
+    expect(screen.getByText('Text HOME to 741741')).toBeInTheDocument()
+    expect(screen.getByText('1-800-662-4357')).toBeInTheDocument()
+  })
+
+  it('offers a copy button per resource', () => {
+    render(<CrisisResourceCard />)
+    expect(screen.getAllByRole('button', { name: /^copy /i })).toHaveLength(3)
+  })
+
+  it('copies a dialable value, not the display string', async () => {
+    const user = userEvent.setup()
+    const writeText = stubClipboard()
+    render(<CrisisResourceCard />)
+
+    await user.click(screen.getByRole('button', { name: /copy crisis text/i }))
+
+    // The row reads "Text HOME to 741741"; what is copied has to be dialable.
+    expect(writeText).toHaveBeenCalledWith('741741')
+  })
+
+  it('confirms the copy, then goes quiet again', async () => {
+    jest.useFakeTimers()
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    stubClipboard()
+    render(<CrisisResourceCard />)
+
+    await user.click(screen.getByRole('button', { name: /copy 988/i }))
+    expect(await screen.findByText('Copied')).toBeInTheDocument()
+
+    act(() => {
+      jest.advanceTimersByTime(2100)
+    })
+    expect(screen.queryByText('Copied')).not.toBeInTheDocument()
+    jest.useRealTimers()
+  })
+
+  it('survives the clipboard being unavailable', async () => {
+    const user = userEvent.setup()
+    removeClipboard()
+    render(<CrisisResourceCard />)
+
+    await user.click(screen.getByRole('button', { name: /copy 988/i }))
+
+    expect(screen.getByTestId('crisis-resource-card')).toBeInTheDocument()
+    expect(screen.queryByText('Copied')).not.toBeInTheDocument()
   })
 
   it('opens the directory without handing over the referrer', () => {

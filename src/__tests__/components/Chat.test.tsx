@@ -19,10 +19,12 @@ const mockSessionResponse = {
   expiresAt: new Date(Date.now() + 3600000).toISOString(),
 }
 
-const createSSEStream = (text: string, widget?: string) => {
+const createSSEStream = (text: string, ...widgets: string[]) => {
   const encoder = new TextEncoder()
   const chunks = [`data: ${JSON.stringify({ text })}\n\n`]
-  if (widget) chunks.push(`data: ${JSON.stringify({ widget })}\n\n`)
+  for (const widget of widgets) {
+    chunks.push(`data: ${JSON.stringify({ widget })}\n\n`)
+  }
   chunks.push('data: [DONE]\n\n')
   let chunkIndex = 0
 
@@ -50,10 +52,10 @@ function mockSessionCreate() {
   })
 }
 
-function mockChatResponse(text: string, widget?: string) {
+function mockChatResponse(text: string, ...widgets: string[]) {
   ;(global.fetch as jest.Mock).mockResolvedValueOnce({
     ok: true,
-    body: createSSEStream(text, widget),
+    body: createSSEStream(text, ...widgets),
   })
 }
 
@@ -407,5 +409,105 @@ describe('Chat – Crisis card signalling', () => {
       expect(screen.getByText('That sounds heavy.')).toBeInTheDocument()
     })
     expect(screen.queryByTestId('crisis-resource-card')).not.toBeInTheDocument()
+  })
+})
+
+describe('Chat – Breathing widget signalling', () => {
+  it('renders the timer when the tool call reaches the client', async () => {
+    const user = userEvent.setup()
+    mockSessionCreate()
+    mockChatResponse('Let us try box breathing.', 'breathing_exercise')
+
+    render(<Chat />)
+    await sendFirstMessage(user, 'help me calm down')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('box-breathing')).toBeInTheDocument()
+    })
+  })
+
+  // The marker used to be the trigger. Now that the tool is, a marker in the
+  // text is inert — and still never visible.
+  it('ignores a breathing marker sitting in the message text', async () => {
+    const user = userEvent.setup()
+    mockSessionCreate()
+    mockChatResponse('Sure: [SHOW_BREATHING]')
+
+    render(<Chat />)
+    await sendFirstMessage(user)
+
+    await waitFor(() => expect(screen.getByText(/sure:/i)).toBeInTheDocument())
+    expect(screen.queryByTestId('box-breathing')).not.toBeInTheDocument()
+    expect(screen.queryByText(/SHOW_BREATHING/)).not.toBeInTheDocument()
+  })
+
+  it('leaves an ordinary reply without a timer', async () => {
+    const user = userEvent.setup()
+    mockSessionCreate()
+    mockChatResponse('That sounds hard.')
+
+    render(<Chat />)
+    await sendFirstMessage(user)
+
+    await waitFor(() =>
+      expect(screen.getByText('That sounds hard.')).toBeInTheDocument(),
+    )
+    expect(screen.queryByTestId('box-breathing')).not.toBeInTheDocument()
+  })
+})
+
+describe('Chat – Widget deduplication', () => {
+  it('keeps one crisis card when every reply carries one', async () => {
+    const user = userEvent.setup()
+    mockSessionCreate()
+    mockChatResponse('Please reach out.', 'crisis_resources')
+    mockChatResponse('Still here with you.', 'crisis_resources')
+
+    render(<Chat />)
+    await sendFirstMessage(user, 'I want to kill myself')
+    await waitFor(() =>
+      expect(screen.getByTestId('crisis-resource-card')).toBeInTheDocument(),
+    )
+
+    await user.type(screen.getByPlaceholderText('Reply...'), 'still bad{Enter}')
+
+    await waitFor(() =>
+      expect(screen.getByText('Still here with you.')).toBeInTheDocument(),
+    )
+    expect(screen.getAllByTestId('crisis-resource-card')).toHaveLength(1)
+  })
+
+  it('keeps one breathing timer across repeated suggestions', async () => {
+    const user = userEvent.setup()
+    mockSessionCreate()
+    mockChatResponse('Try breathing.', 'breathing_exercise')
+    mockChatResponse('Try again.', 'breathing_exercise')
+
+    render(<Chat />)
+    await sendFirstMessage(user)
+    await waitFor(() =>
+      expect(screen.getByTestId('box-breathing')).toBeInTheDocument(),
+    )
+
+    await user.type(screen.getByPlaceholderText('Reply...'), 'again{Enter}')
+
+    await waitFor(() =>
+      expect(screen.getByText('Try again.')).toBeInTheDocument(),
+    )
+    expect(screen.getAllByTestId('box-breathing')).toHaveLength(1)
+  })
+
+  it('shows both widgets when a reply asks for both', async () => {
+    const user = userEvent.setup()
+    mockSessionCreate()
+    mockChatResponse('Here.', 'crisis_resources', 'breathing_exercise')
+
+    render(<Chat />)
+    await sendFirstMessage(user)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('crisis-resource-card')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('box-breathing')).toBeInTheDocument()
   })
 })

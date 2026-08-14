@@ -1,44 +1,35 @@
 import {
-  parseMarkers,
+  stripMarkers,
   BREATHING_MARKER,
   CRISIS_RESOURCES_MARKER,
+  CRISIS_WIDGET,
+  BREATHING_WIDGET,
 } from '@/lib/markers'
 
-describe('parseMarkers', () => {
+// Neither widget is triggered by message text any more — the crisis card comes
+// from the server's own branch, the breathing timer from a tool call. All this
+// module does now is make sure a marker never reaches the screen, whether it
+// arrived from an old stored transcript or from a model that was talked into
+// typing one.
+describe('stripMarkers', () => {
   it('leaves an ordinary message alone', () => {
-    const r = parseMarkers('Take your time.')
-    expect(r).toEqual({ content: 'Take your time.', showBreathing: false })
+    expect(stripMarkers('Take your time.')).toBe('Take your time.')
   })
 
-  it('detects and removes the breathing marker', () => {
-    const r = parseMarkers(`Let us try a round together.\n${BREATHING_MARKER}`)
-    expect(r.showBreathing).toBe(true)
-    expect(r.content).toBe('Let us try a round together.')
-    expect(r.content).not.toContain('SHOW_BREATHING')
+  it.each([
+    [BREATHING_MARKER, 'Let us try a round together.'],
+    [CRISIS_RESOURCES_MARKER, 'Please reach out.'],
+  ])('removes a trailing %s', (marker, body) => {
+    expect(stripMarkers(`${body}\n${marker}`)).toBe(body)
   })
 
-  // The crisis card is signalled out of band by the server. A crisis marker in
-  // model output is stripped so it cannot be read, and reports nothing, so a
-  // manipulated reply has no route to rendering the card.
-  it('strips the crisis marker without reporting it as a signal', () => {
-    const r = parseMarkers(`Please reach out.\n${CRISIS_RESOURCES_MARKER}`)
-    expect(r.content).toBe('Please reach out.')
-    expect(r.content).not.toContain('SHOW_CRISIS_RESOURCES')
-    expect(r).not.toHaveProperty('showCrisisResources')
-  })
-
-  it('handles both markers in one message', () => {
-    const r = parseMarkers(
-      `Here for you.\n${CRISIS_RESOURCES_MARKER}\n${BREATHING_MARKER}`,
-    )
-    expect(r.showBreathing).toBe(true)
-    expect(r.content).toBe('Here for you.')
+  it('removes both markers from one message', () => {
+    const raw = `Here for you.\n${CRISIS_RESOURCES_MARKER}\n${BREATHING_MARKER}`
+    expect(stripMarkers(raw)).toBe('Here for you.')
   })
 
   it('removes a marker that lands mid-message', () => {
-    const r = parseMarkers(`One.${BREATHING_MARKER} Two.`)
-    expect(r.content).toBe('One. Two.')
-    expect(r.showBreathing).toBe(true)
+    expect(stripMarkers(`One.${BREATHING_MARKER} Two.`)).toBe('One. Two.')
   })
 
   // Responses stream token by token, so an incomplete marker must not flash on
@@ -50,22 +41,26 @@ describe('parseMarkers', () => {
     'Try this.\n[SHOW_BREATHING',
     'Try this.\n[SHOW_CRISIS',
   ])('hides the partial marker in %p', (partial) => {
-    const r = parseMarkers(partial)
-    expect(r.content).toBe('Try this.')
-    expect(r.content).not.toContain('[')
+    expect(stripMarkers(partial)).toBe('Try this.')
   })
 
   it('keeps a bracket that cannot become a marker', () => {
-    const r = parseMarkers('He said [loudly] that it helped')
-    expect(r.content).toBe('He said [loudly] that it helped')
+    const text = 'He said [loudly] that it helped'
+    expect(stripMarkers(text)).toBe(text)
   })
 
   it('reveals nothing while a marker streams in a token at a time', () => {
     const full = `Breathe with me.\n${BREATHING_MARKER}`
     for (let i = 0; i <= full.length; i++) {
-      expect(parseMarkers(full.slice(0, i)).content).not.toMatch(
+      expect(stripMarkers(full.slice(0, i))).not.toMatch(
         /\[SHOW|SHOW_BREATHING/,
       )
     }
+  })
+})
+
+describe('widget names', () => {
+  it('are distinct, so one event cannot be mistaken for the other', () => {
+    expect(CRISIS_WIDGET).not.toBe(BREATHING_WIDGET)
   })
 })

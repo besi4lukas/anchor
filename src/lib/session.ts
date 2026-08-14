@@ -229,6 +229,42 @@ export async function clearCrisisFlag(id: string): Promise<void> {
   }
 }
 
+// --- extension -----------------------------------------------------------------
+//
+// Same reasoning as the crisis flag: `extended` rides in the signed cookie,
+// which proves the token was issued by us but not that it is the newest one a
+// client holds. Without a server record, "one-time only" would mean "once per
+// cookie you kept a copy of".
+
+function extendedKey(id: string): string {
+  return `extended:${id}`
+}
+
+export async function readExtendedFlag(id: string): Promise<boolean> {
+  try {
+    return (await getRedis().get(extendedKey(id))) !== null
+  } catch {
+    return false
+  }
+}
+
+export async function markExtendedFlag(id: string): Promise<void> {
+  try {
+    await getRedis().set(extendedKey(id), 1, { ex: SESSION_MAX_AGE })
+  } catch {
+    // best-effort; the signed cookie still carries the flag forward
+  }
+}
+
+/** Pushes the transcript's expiry out without rewriting its contents. */
+export async function touchTranscript(id: string): Promise<void> {
+  try {
+    await getRedis().expire(transcriptKey(id), SESSION_TTL)
+  } catch {
+    // best-effort; the transcript is an accelerator, not the source of truth
+  }
+}
+
 export async function deleteTranscript(id: string): Promise<void> {
   try {
     await getRedis().del(transcriptKey(id))

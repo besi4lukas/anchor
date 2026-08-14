@@ -1,5 +1,6 @@
 'use client'
 
+import { m } from 'framer-motion'
 import { TypingIndicator } from './TypingIndicator'
 
 interface MessageBubbleProps {
@@ -7,6 +8,18 @@ interface MessageBubbleProps {
   content: string
   isStreaming?: boolean
 }
+
+/**
+ * Entry animation only, and only on opacity and transform — both composited on
+ * the GPU, so a message arriving mid-stream never triggers layout or paint on
+ * the rest of the transcript. `initial` runs once per mount, so the tokens
+ * streaming into the last bubble re-render without re-animating anything.
+ */
+const ENTRY = {
+  initial: { opacity: 0, y: 6 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.2, ease: 'easeOut' },
+} as const
 
 export function MessageBubble({
   role,
@@ -16,7 +29,8 @@ export function MessageBubble({
   const isUser = role === 'user'
 
   return (
-    <div
+    <m.div
+      {...ENTRY}
       data-role={role}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
     >
@@ -45,6 +59,6 @@ export function MessageBubble({
           )}
         </div>
       )}
-    </div>
+    </m.div>
   )
 }
