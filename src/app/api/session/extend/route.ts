@@ -4,31 +4,19 @@ import {
   markExtendedFlag,
   readExtendedFlag,
   touchTranscript,
-  verifyCounters,
-  SESSION_COOKIE,
   SESSION_MAX_AGE,
   SESSION_TTL,
   type SessionCounters,
 } from '@/lib/session'
+import { requireSession } from '@/lib/api/session-guard'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
-  const token = req.cookies.get(SESSION_COOKIE)?.value
-  if (!token) {
-    return NextResponse.json({ error: 'No session' }, { status: 401 })
-  }
-
-  const counters = verifyCounters(token)
-  if (!counters) {
-    const res = NextResponse.json(
-      { error: 'Session expired or not found' },
-      { status: 410 },
-    )
-    res.cookies.delete(SESSION_COOKIE)
-    return res
-  }
+  const guard = requireSession(req)
+  if (!guard.ok) return guard.response
+  const { counters } = guard
 
   // Cookie OR server record. The cookie answers when Redis is down; the record
   // answers when the client replays a cookie saved before it extended.

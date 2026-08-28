@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getRedis } from '@/lib/redis'
-import { parseBody, MoodInputSchema } from '@/lib/validation'
+import { readJsonBody } from '@/lib/api/json-body'
+import { MoodInputSchema } from '@/lib/validation'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,13 +15,9 @@ export const dynamic = 'force-dynamic'
  * say so without qualification.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const raw: unknown = await req.json().catch(() => null)
-
-  const parsed = parseBody(MoodInputSchema, raw)
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error }, { status: 400 })
-  }
-  const { value } = parsed.data
+  const body = await readJsonBody(req, MoodInputSchema)
+  if (!body.ok) return body.response
+  const { value } = body.data
 
   try {
     await getRedis().incr(`mood:${value}`)
