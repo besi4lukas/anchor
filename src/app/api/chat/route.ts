@@ -1,5 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
+import { getAnthropic, HAIKU_MODEL } from '@/lib/ai-clients'
+import {
+  encodeChatEvent,
+  encodeChatStream,
+  DONE_EVENT,
+} from '@/lib/chat-stream'
 import {
   counterCookie,
   markCrisisFlag,
@@ -47,10 +53,6 @@ const BREATHING_TOOL: Anthropic.Tool = {
   input_schema: { type: 'object', properties: {} },
 }
 
-function getAnthropic(): Anthropic {
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-}
-
 /**
  * Set-Cookie is a header, so the advanced counters have to be committed before
  * the body starts streaming. Both the success and fallback paths add exactly
@@ -66,18 +68,6 @@ function sseResponse(body: BodyInit, counters: SessionCounters): NextResponse {
   })
   response.cookies.set(counterCookie(counters))
   return response
-}
-
-/**
- * Widgets that carry weight travel on their own event rather than as a marker
- * inside the message text. Model tokens only ever populate `text`, so a reply
- * cannot fabricate a `widget` no matter what the person types at it.
- */
-function encodeSSE(text: string, widget?: string): string {
-  const events = [`data: ${JSON.stringify({ text })}\n\n`]
-  if (widget) events.push(`data: ${JSON.stringify({ widget })}\n\n`)
-  events.push('data: [DONE]\n\n')
-  return events.join('')
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -215,7 +205,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       : (await generateCrisisReply(claudeMessages)).text
 
     await persist(reply)
-    return sseResponse(encodeSSE(reply, CRISIS_WIDGET), {
+    return sseResponse(encodeChatStream(reply, CRISIS_WIDGET), {
       ...nextCounters,
       crisis_flag: true,
     })
@@ -223,7 +213,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   if (moderation.flagged) {
     await persist(HARM_RESPONSE)
-    return sseResponse(encodeSSE(HARM_RESPONSE), nextCounters)
+    return sseResponse(encodeChatStream(HARM_RESPONSE), nextCounters)
   }
 
   // Runs only after crisis and harm have had their say. Someone in crisis may
@@ -234,7 +224,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     // Decision and score only. The message itself is never logged.
     console.info(`[TopicGuard] declined (margin ${topic.margin.toFixed(3)})`)
     await persist(OFF_TOPIC_RESPONSE)
-    return sseResponse(encodeSSE(OFF_TOPIC_RESPONSE), nextCounters)
+    return sseResponse(encodeChatStream(OFF_TOPIC_RESPONSE), nextCounters)
   }
 
   // Retrieval swallows its own failures and yields no chunks, so an outage
@@ -248,7 +238,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     const stream = anthropic.messages.stream(
       {
-        model: 'claude-haiku-4-5-20251001',
+        model: HAIKU_MODEL,
         max_tokens: 300,
         system: systemPrompt,
         messages: claudeMessages,
@@ -273,7 +263,7 @@ export async function POST(req: NextRequest): Promise<Response> {
               const token = event.delta.text
               fullText += token
               controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ text: token })}\n\n`),
+                encoder.encode(encodeChatEvent({ text: token })),
               )
             }
 
@@ -287,19 +277,17 @@ export async function POST(req: NextRequest): Promise<Response> {
               event.content_block.name === BREATHING_TOOL.name
             ) {
               controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ widget: BREATHING_WIDGET })}\n\n`,
-                ),
+                encoder.encode(encodeChatEvent({ widget: BREATHING_WIDGET })),
               )
             }
           }
 
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+          controller.enqueue(encoder.encode(DONE_EVENT))
           controller.close()
 
           await persist(fullText)
         } catch {
-          controller.enqueue(encoder.encode(encodeSSE(FALLBACK_MESSAGE)))
+          controller.enqueue(encoder.encode(encodeChatStream(FALLBACK_MESSAGE)))
           controller.close()
           await persist(FALLBACK_MESSAGE)
         }
@@ -312,6 +300,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     return sseResponse(readable, nextCounters)
   } catch {
     await persist(FALLBACK_MESSAGE)
-    return sseResponse(encodeSSE(FALLBACK_MESSAGE), nextCounters)
+    return sseResponse(encodeChatStream(FALLBACK_MESSAGE), nextCounters)
   }
 }

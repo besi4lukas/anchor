@@ -116,3 +116,42 @@ export async function* readChatStream(
 
   yield* parser.flush()
 }
+
+// --- the server half ---------------------------------------------------------
+//
+// The encoder lives beside the decoder, in the one file that already owns this
+// wire format, so the two halves of the protocol are checked against each other
+// by the compiler rather than by hope. Before this, the route hand-wrote
+// `data: ${JSON.stringify({ text })}\n\n` in four places and a mistyped widget
+// name produced an event the client silently dropped.
+//
+// Nothing here imports next/server or lib/session. This module is pulled in by
+// useChatStream, and a server-only import would drag node:crypto and the
+// Upstash SDK into the browser bundle.
+
+/** One `data:` payload. Text and widget may both be present. */
+export interface ChatStreamChunk {
+  text?: string
+  widget?: WidgetName
+}
+
+export const DONE_EVENT = 'data: [DONE]\n\n'
+
+/**
+ * One `data:` line — the exact inverse of decodePayload.
+ *
+ * Widgets are encoded as their own field, never folded into `text`. Model
+ * tokens only ever populate `text`, so a reply cannot talk its way into
+ * rendering a crisis card no matter what the person types at it.
+ */
+export function encodeChatEvent(chunk: ChatStreamChunk): string {
+  return `data: ${JSON.stringify(chunk)}\n\n`
+}
+
+/** A complete non-streamed reply: the text, an optional widget, then [DONE]. */
+export function encodeChatStream(text: string, widget?: WidgetName): string {
+  const events = [encodeChatEvent({ text })]
+  if (widget) events.push(encodeChatEvent({ widget }))
+  events.push(DONE_EVENT)
+  return events.join('')
+}
