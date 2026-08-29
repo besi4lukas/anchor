@@ -91,6 +91,20 @@ describe('streamReply', () => {
     ])
   })
 
+  // Only the one tool this route declares draws a widget. Any other tool_use
+  // block is a decision the client has no rendering for, so it is dropped
+  // rather than forwarded as an unknown widget name.
+  it('ignores a tool call it does not recognise', async () => {
+    mockStream.mockReturnValue(
+      streamOf(textDelta('hi'), toolStart('some_other_tool')),
+    )
+    const persist = jest.fn().mockResolvedValue(true)
+
+    const events = await drain(await streamReply(input(persist)))
+
+    expect(events).toEqual([{ type: 'text', text: 'hi' }])
+  })
+
   it('persists the assembled reply exactly once', async () => {
     mockStream.mockReturnValue(streamOf(textDelta('one '), textDelta('two')))
     const persist = jest.fn().mockResolvedValue(true)
