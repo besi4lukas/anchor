@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { readChatStream } from '@/lib/chat-stream'
 import { CRISIS_WIDGET, BREATHING_WIDGET } from '@/lib/markers'
 import { CONTEXT_WINDOW } from '@/lib/session-config'
+import { retryWording } from '@/lib/retry-wording'
 
 export interface Message {
   role: 'user' | 'assistant'
@@ -16,14 +17,6 @@ export interface Message {
 
 const CONNECTING_MESSAGE = 'Anchor is connecting… please try again.'
 const CONNECTING_ERROR = 'Anchor is connecting…'
-
-/** How long to tell someone to wait, from the server's own Retry-After. */
-function retryWording(header: string | null): string {
-  const seconds = Number(header)
-  return Number.isFinite(seconds) && seconds > 0
-    ? `about ${seconds} second${seconds === 1 ? '' : 's'}`
-    : 'a moment'
-}
 
 export interface ChatStream {
   messages: Message[]
