@@ -39,3 +39,6 @@ next-env.d.ts
 # AI prompts
 Task.md
 context.md
+
+# Claude Code machine-local settings (permission grants, absolute paths)
+.claude/settings.local.json

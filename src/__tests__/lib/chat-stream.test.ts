@@ -5,6 +5,9 @@ import { TextEncoder } from 'util'
 import {
   createSSEParser,
   readChatStream,
+  encodeChatEvent,
+  encodeChatStream,
+  DONE_EVENT,
   type ChatStreamEvent,
 } from '@/lib/chat-stream'
 import { CRISIS_WIDGET, BREATHING_WIDGET } from '@/lib/markers'
@@ -192,6 +195,75 @@ describe('readChatStream', () => {
 
   it('yields nothing for a stream that closes immediately', async () => {
     expect(await collect([])).toEqual([])
+  })
+})
+
+// --- round trip --------------------------------------------------------------
+//
+// The encoder and the parser are the two halves of one protocol, and until they
+// shared a file nothing checked them against each other. These are the tests
+// that fail if either side drifts.
+
+describe('encodeChatStream / createSSEParser round trip', () => {
+  function roundTrip(wire: string): ChatStreamEvent[] {
+    const parser = createSSEParser()
+    return [...parser.push(wire), ...parser.flush()]
+  }
+
+  it('carries text and a widget, text first', () => {
+    const events = roundTrip(encodeChatStream('be kind', CRISIS_WIDGET))
+
+    expect(events).toEqual([
+      { type: 'text', text: 'be kind' },
+      { type: 'widget', widget: CRISIS_WIDGET },
+    ])
+  })
+
+  it('carries text alone when no widget is asked for', () => {
+    expect(roundTrip(encodeChatStream('just words'))).toEqual([
+      { type: 'text', text: 'just words' },
+    ])
+  })
+
+  it('closes with [DONE], which the parser drops', () => {
+    const wire = encodeChatStream('hi')
+
+    expect(wire.endsWith(DONE_EVENT)).toBe(true)
+    expect(roundTrip(wire)).toHaveLength(1)
+  })
+
+  it.each([
+    ['a newline', 'line one\nline two'],
+    ['a quote', 'she said "hello"'],
+    ['a data: prefix', 'data: not really an event'],
+    ['an emoji', 'breathe 🌊'],
+    ['an empty string', ''],
+  ])('survives %s in the text', (_label, text) => {
+    expect(roundTrip(encodeChatStream(text))).toEqual([{ type: 'text', text }])
+  })
+
+  it('survives being split at every byte boundary', () => {
+    const wire = encodeChatStream('steady', BREATHING_WIDGET)
+
+    for (let i = 0; i <= wire.length; i++) {
+      const parser = createSSEParser()
+      const events = [
+        ...parser.push(wire.slice(0, i)),
+        ...parser.push(wire.slice(i)),
+        ...parser.flush(),
+      ]
+
+      expect(events).toEqual([
+        { type: 'text', text: 'steady' },
+        { type: 'widget', widget: BREATHING_WIDGET },
+      ])
+    }
+  })
+
+  it('encodes a lone token the way the streaming loop does', () => {
+    expect(roundTrip(encodeChatEvent({ text: 'tok' }))).toEqual([
+      { type: 'text', text: 'tok' },
+    ])
   })
 })
 

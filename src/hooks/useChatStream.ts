@@ -4,18 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { readChatStream } from '@/lib/chat-stream'
 import { CRISIS_WIDGET, BREATHING_WIDGET } from '@/lib/markers'
 import { HTTP_TOO_MANY_REQUESTS } from '@/lib/http'
+import { retryWording } from '@/lib/retry-wording'
 import type { Message } from '@/lib/types'
 
 const CONNECTING_MESSAGE = 'Anchor is connecting… please try again.'
 const CONNECTING_ERROR = 'Anchor is connecting…'
-
-/** How long to tell someone to wait, from the server's own Retry-After. */
-function retryWording(header: string | null): string {
-  const seconds = Number(header)
-  return Number.isFinite(seconds) && seconds > 0
-    ? `about ${seconds} second${seconds === 1 ? '' : 's'}`
-    : 'a moment'
-}
 
 /** A throttled send is a normal outcome, not a connection failure, so it gets
  *  its own wording and the server's own Retry-After. */

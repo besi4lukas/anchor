@@ -21,9 +21,19 @@ export interface ChatMessage {
 }
 
 /**
- * Session state carried in the signed cookie. This is the authoritative copy:
- * it is written on every response and cannot be forged by the client, so the
- * message cap and expiry hold whether or not Redis is reachable.
+ * Session state carried in the signed cookie, written on every response.
+ *
+ * The signature makes these values un-forgeable, which is not the same as
+ * un-replayable, and the difference matters per field. A client that keeps a
+ * copy of an early cookie can send it again later, and every field goes back to
+ * what it said at the time.
+ *
+ * `crisis_flag` and `extended` are therefore mirrored server-side and read as
+ * an OR — see the notes above their helpers below. `message_count` is not, so
+ * the 30-message cap is a soft guardrail rather than an enforced limit: a
+ * replayed cookie resets it, bounded only by the rate limiter and by
+ * SESSION_MAX_AGE. That is a deliberate open question, not an oversight. If it
+ * ever needs to be real, the crisis-flag helpers are the pattern to copy.
  */
 export interface SessionCounters {
   id: string

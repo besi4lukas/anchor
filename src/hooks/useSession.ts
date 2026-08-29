@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { retryWording } from '@/lib/retry-wording'
+import { HTTP_TOO_MANY_REQUESTS } from '@/lib/http'
 
 function isValidSessionPayload(
   data: unknown,
@@ -46,6 +48,18 @@ export function useSession(): Session {
   const start = useCallback(async () => {
     try {
       const res = await fetch('/api/session/create', { method: 'POST' })
+
+      // A throttled start is not a broken one, and "please refresh" is the
+      // worst possible advice here — refreshing is what spends the allowance.
+      if (res.status === HTTP_TOO_MANY_REQUESTS) {
+        setError(
+          `Anchor is busy right now. Please try again in ${retryWording(
+            res.headers.get('Retry-After'),
+          )}.`,
+        )
+        return
+      }
+
       if (!res.ok) throw new Error(`Session create failed: ${res.status}`)
       const data: unknown = await res.json()
       if (!isValidSessionPayload(data)) {
