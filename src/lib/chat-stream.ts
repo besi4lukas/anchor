@@ -129,11 +129,14 @@ export async function* readChatStream(
 // useChatStream, and a server-only import would drag node:crypto and the
 // Upstash SDK into the browser bundle.
 
-/** One `data:` payload. Text and widget may both be present. */
-export interface ChatStreamChunk {
-  text?: string
-  widget?: WidgetName
-}
+/**
+ * One `data:` payload. Both fields may be present, but not neither — an empty
+ * chunk encodes to `data: {}`, which the parser correctly turns into no events
+ * at all, so it is a frame that costs bytes and says nothing.
+ */
+export type ChatStreamChunk =
+  | { text: string; widget?: WidgetName }
+  | { text?: string; widget: WidgetName }
 
 export const DONE_EVENT = 'data: [DONE]\n\n'
 

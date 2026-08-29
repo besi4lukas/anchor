@@ -62,7 +62,6 @@ function context(moderation: ModerationResult): ChatContext {
     history: [],
     claudeMessages: [{ role: 'user', content: 'hi' }],
     nextCounters: { ...counters, message_count: 6 },
-    sessionId: counters.id,
     persist: jest.fn().mockResolvedValue(true),
   }
 }
@@ -114,7 +113,7 @@ describe('resolveCannedReply', () => {
     const chat = context(crisis('keyword_match'))
     await resolveCannedReply(chat, 'hi')
 
-    expect(mockMarkCrisis).toHaveBeenCalledWith(chat.sessionId)
+    expect(mockMarkCrisis).toHaveBeenCalledWith(chat.nextCounters.id)
   })
 
   // A signature proves a token was issued by us, not that it is the newest one

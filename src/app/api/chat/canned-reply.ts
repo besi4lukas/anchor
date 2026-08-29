@@ -32,7 +32,7 @@ export async function resolveCannedReply(
   // branch itself rather than derived from the flag: layer 3 keeps returning
   // isCrisis for a flagged session, so every reply here carries its own card.
   if (chat.moderation.isCrisis) {
-    await markCrisisFlag(chat.sessionId)
+    await markCrisisFlag(chat.nextCounters.id)
 
     // The turn that discloses a crisis is answered by the hardcoded text, every
     // time, with no model involved — that moment has to be predictable. Only

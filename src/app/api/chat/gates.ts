@@ -62,8 +62,13 @@ export async function runGates(req: NextRequest): Promise<ChatGateResult> {
   // best-effort fallback for when Redis is unreachable, so bounding it — drop
   // bad turns, cap the length, keep the rest — serves the person better than
   // rejecting the whole request because one entry was malformed.
+  //
+  // The `?.` is not redundant. ChatInputSchema is an object schema, so `raw`
+  // cannot be null on this branch today — but JsonBody<T> is generic and says
+  // so nowhere, and a caller passing a non-object schema would find the
+  // TypeError here rather than in review.
   const clientHistory = sanitizeTranscript(
-    (body.raw as { messages?: unknown }).messages,
+    (body.raw as { messages?: unknown } | null)?.messages,
     CONTEXT_WINDOW,
   )
 

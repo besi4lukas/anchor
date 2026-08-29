@@ -24,8 +24,8 @@ export interface ChatContext {
   anchors: TopicAnchors | null
   history: ChatMessage[]
   claudeMessages: { role: 'user' | 'assistant'; content: string }[]
+  /** Carries the session id; nextCounters.id is the only copy of it. */
   nextCounters: SessionCounters
-  sessionId: string
   persist: (assistant: string) => Promise<boolean>
 }
 
@@ -71,10 +71,15 @@ export async function buildChatContext({
     m.role === 'assistant' ? { ...m, content: stripMarkers(m.content) } : m,
   )
 
+  // One turn, one instant. Three separate Date.now() calls — the user turn,
+  // last_active, and a third inside persist evaluated whenever the reply
+  // finishes — timestamped one exchange at three different moments.
+  const now = Date.now()
+
   const userMessage: ChatMessage = {
     role: 'user',
     content: message,
-    timestamp: Date.now(),
+    timestamp: now,
   }
 
   return {
@@ -82,7 +87,6 @@ export async function buildChatContext({
     retrieval,
     anchors,
     history,
-    sessionId: counters.id,
 
     claudeMessages: [...history, userMessage]
       .slice(-CONTEXT_WINDOW)
@@ -90,7 +94,7 @@ export async function buildChatContext({
 
     nextCounters: {
       ...counters,
-      last_active: Date.now(),
+      last_active: now,
       message_count: counters.message_count + 2,
     },
 
@@ -105,7 +109,7 @@ export async function buildChatContext({
           {
             role: 'assistant' as const,
             content: stripMarkers(assistant),
-            timestamp: Date.now(),
+            timestamp: now,
           },
         ].slice(-MAX_MESSAGES),
       ),

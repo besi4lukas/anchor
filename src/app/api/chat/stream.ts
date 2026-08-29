@@ -29,7 +29,12 @@ const BREATHING_TOOL: Anthropic.Tool = {
 export interface StreamInput {
   systemPrompt: string
   messages: { role: 'user' | 'assistant'; content: string }[]
-  persist: (assistant: string) => Promise<unknown>
+  /**
+   * Narrowed to match writeTranscript, which reports failure rather than
+   * throwing. A persist that can reject would land in the `finally` below,
+   * after the controller has closed and the person has their reply.
+   */
+  persist: (assistant: string) => Promise<boolean>
 }
 
 /**
@@ -99,20 +104,31 @@ export async function streamReply({
           }
 
           controller.enqueue(encoder.encode(DONE_EVENT))
-          controller.close()
+        } catch (error) {
+          // The only signal an outage gives: the person still gets a 200 and an
+          // apology, so a silent catch here would leave a fully degraded chat
+          // indistinguishable from a healthy one.
+          console.error('[Chat] Stream failed mid-flight:', error)
 
-          await persist(fullText)
-        } catch {
           controller.enqueue(encoder.encode(encodeChatStream(FALLBACK_MESSAGE)))
+
+          // The partial text stays on screen — it was already sent — but only
+          // the fallback is stored, so a half-finished thought is not replayed
+          // back into Claude's context next turn.
+          fullText = FALLBACK_MESSAGE
+        } finally {
+          // Exactly once, on both paths. Closing inside the try and again in
+          // the catch would throw on the second call and error the stream.
           controller.close()
-          await persist(FALLBACK_MESSAGE)
+          await persist(fullText)
         }
       },
       cancel() {
         abortController.abort()
       },
     })
-  } catch {
+  } catch (error) {
+    console.error('[Chat] Stream could not be opened:', error)
     await persist(FALLBACK_MESSAGE)
     return encodeChatStream(FALLBACK_MESSAGE)
   }
