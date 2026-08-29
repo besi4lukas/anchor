@@ -1,5 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
+import { getAnthropic, HAIKU_MODEL } from '@/lib/ai-clients'
 import { withDeadline } from '@/lib/deadline'
 import { CRISIS_RESPONSE } from '@/lib/moderation'
 import { BREATHING_MARKER, CRISIS_RESOURCES_MARKER } from '@/lib/markers'
@@ -20,24 +20,13 @@ import { BREATHING_MARKER, CRISIS_RESOURCES_MARKER } from '@/lib/markers'
  * reason to ever take the risk.
  */
 
-const REPLY_MODEL = 'claude-haiku-4-5-20251001'
-const REVIEW_MODEL = 'claude-haiku-4-5-20251001'
-
 const REPLY_TIMEOUT_MS = 8_000
 const REVIEW_TIMEOUT_MS = 5_000
 const OUTPUT_MODERATION_TIMEOUT_MS = 2_000
 
 const MAX_REPLY_CHARS = 700
 
-let _anthropic: Anthropic | null = null
 let _openai: OpenAI | null = null
-
-function getAnthropic(): Anthropic {
-  if (!_anthropic) {
-    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  }
-  return _anthropic
-}
 
 function getOpenAI(): OpenAI {
   if (!_openai) {
@@ -139,7 +128,7 @@ async function judgeDraft(draft: string): Promise<ReviewResult> {
   try {
     const response = await getAnthropic().messages.create(
       {
-        model: REVIEW_MODEL,
+        model: HAIKU_MODEL,
         max_tokens: 100,
         temperature: 0,
         system: REVIEW_PROMPT,
@@ -250,7 +239,7 @@ export async function generateCrisisReply(
     const response = await withDeadline(
       getAnthropic().messages.create(
         {
-          model: REPLY_MODEL,
+          model: HAIKU_MODEL,
           max_tokens: 200,
           temperature: 0.3,
           system: CRISIS_SUPPORT_PROMPT,
