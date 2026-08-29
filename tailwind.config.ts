@@ -55,6 +55,15 @@ const config: Config = {
           'accent-fg': 'oklch(0.99 0.005 150)',
           link: 'oklch(0.45 0.05 165)',
           'link-hover': 'oklch(0.32 0.06 165)',
+
+          // Chat surface palette. A separate scale from the landing colours
+          // above, not a replacement for it: these are the values the chat
+          // screens already shipped, moved out of the components verbatim.
+          surface: '#F8FAFC',
+          'ink-strong': '#1A1A2E',
+          mint: '#A6EEBF',
+          bubble: '#EDF1F5',
+          'brand-blue': '#2C5F8A',
         },
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',

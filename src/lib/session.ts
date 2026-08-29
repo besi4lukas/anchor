@@ -1,8 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { getRedis } from '@/lib/redis'
 import {
-  CONTEXT_WINDOW,
-  MAX_CONTENT_LENGTH,
   SESSION_COOKIE,
   SESSION_MAX_AGE,
   SESSION_TTL,
@@ -10,7 +8,6 @@ import {
 
 export {
   CONTEXT_WINDOW,
-  MAX_CONTENT_LENGTH,
   MAX_MESSAGES,
   SESSION_COOKIE,
   SESSION_MAX_AGE,
@@ -265,41 +262,16 @@ export async function touchTranscript(id: string): Promise<void> {
   }
 }
 
-export async function deleteTranscript(id: string): Promise<void> {
+/**
+ * Returns whether the delete landed. The caller is telling somebody their
+ * conversation is gone, so it needs to be able to tell the difference — the
+ * TTL is a backstop, not the promise that was made.
+ */
+export async function deleteTranscript(id: string): Promise<boolean> {
   try {
     await getRedis().del(transcriptKey(id))
+    return true
   } catch {
-    // best-effort; the key expires on its own
+    return false
   }
-}
-
-/**
- * Coerce a client-supplied transcript into something safe to send to Claude.
- * The client copy is untrusted input, so it is bounded in both directions:
- * per-message length and number of turns.
- */
-export function sanitizeTranscript(
-  value: unknown,
-  limit: number = CONTEXT_WINDOW,
-): ChatMessage[] {
-  if (!Array.isArray(value)) return []
-
-  const cleaned: ChatMessage[] = []
-  for (const item of value) {
-    if (typeof item !== 'object' || item === null) continue
-    const obj = item as Record<string, unknown>
-    if (obj.role !== 'user' && obj.role !== 'assistant') continue
-    if (typeof obj.content !== 'string') continue
-
-    const content = obj.content.trim().slice(0, MAX_CONTENT_LENGTH)
-    if (!content) continue
-
-    cleaned.push({
-      role: obj.role,
-      content,
-      timestamp: typeof obj.timestamp === 'number' ? obj.timestamp : Date.now(),
-    })
-  }
-
-  return cleaned.slice(-limit)
 }

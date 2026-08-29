@@ -36,7 +36,7 @@ describe('with Redis unavailable', () => {
     await expect(writeTranscript('any-id', [])).resolves.toBe(false)
   })
 
-  it('swallows delete failures', async () => {
-    await expect(deleteTranscript('any-id')).resolves.toBeUndefined()
+  it('reports a failed delete instead of throwing', async () => {
+    await expect(deleteTranscript('any-id')).resolves.toBe(false)
   })
 })

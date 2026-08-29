@@ -11,7 +11,11 @@ import { LazyMotion, MotionConfig, domAnimation } from 'framer-motion'
  * turns itself off for anyone who has asked for that — which for a product
  * people reach for when overwhelmed is the setting most worth honouring.
  */
-export function MotionProvider({ children }: { children: React.ReactNode }) {
+interface MotionProviderProps {
+  children: React.ReactNode
+}
+
+export function MotionProvider({ children }: MotionProviderProps) {
   return (
     <LazyMotion features={domAnimation} strict>
       <MotionConfig reducedMotion="user">{children}</MotionConfig>

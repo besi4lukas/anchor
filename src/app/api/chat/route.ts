@@ -5,7 +5,6 @@ import {
   markCrisisFlag,
   readCrisisFlag,
   readTranscript,
-  sanitizeTranscript,
   verifyCounters,
   writeTranscript,
   CONTEXT_WINDOW,
@@ -111,15 +110,6 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
   const message = parsed.data.message
 
-  // The transcript stays on sanitizeTranscript rather than a schema. It is a
-  // best-effort fallback for when Redis is unreachable, so bounding it — drop
-  // bad turns, cap the length, keep the rest — serves the person better than
-  // rejecting the whole request because one entry was malformed.
-  const clientHistory: ChatMessage[] = sanitizeTranscript(
-    (raw as { messages?: unknown } | null)?.messages,
-    CONTEXT_WINDOW,
-  )
-
   // Cheapest gate first, before any transcript read or upstream call.
   const rateLimit = await checkRateLimit(counters.id)
   if (!rateLimit.allowed) {
@@ -154,9 +144,12 @@ export async function POST(req: NextRequest): Promise<Response> {
     readTranscript(counters.id),
   ])
 
-  // Redis is preferred because it is server-held and cannot be edited, but the
-  // client's copy keeps the conversation going when the cache is unavailable.
-  const rawHistory = stored ?? clientHistory
+  // The transcript is server-held, and only server-held. An earlier version
+  // accepted the client's own copy as a fallback for an unreachable cache; it
+  // was an unauthenticated way to hand the model forged `assistant` turns,
+  // which `persist` below then wrote back as the trusted record. A missing
+  // transcript now starts an empty conversation instead.
+  const rawHistory = stored ?? []
 
   // Markers are a transport detail of an earlier design, and a transcript
   // written before this change can still contain them. Scrubbing on the way in

@@ -1,12 +1,38 @@
 'use client'
 
 import { m } from 'framer-motion'
+import { cva } from 'class-variance-authority'
 import { TypingIndicator } from './TypingIndicator'
+import { MESSAGE_ENTRY } from '@/components/chat/motion'
+import type { Message } from '@/lib/types'
 
 interface MessageBubbleProps {
-  role: 'user' | 'assistant'
+  role: Message['role']
   content: string
   isStreaming?: boolean
+}
+
+/**
+ * Anchor's replies are the page; the person's own words are a card sitting on
+ * it. That is the only structural difference between the two — same element,
+ * same streaming behaviour, different surface.
+ */
+const bubbleVariants = cva(
+  'relative font-serif text-[17px] leading-[1.75] text-anchor-ink-strong',
+  {
+    variants: {
+      role: {
+        user: 'max-w-[85%] rounded-2xl bg-anchor-bubble px-4 py-3 sm:max-w-[70%]',
+        assistant: 'w-full',
+      },
+    },
+  },
+)
+
+/** Read out before the message so the two voices are distinguishable aloud. */
+const SPOKEN_PREFIX: Record<Message['role'], string> = {
+  user: 'You said: ',
+  assistant: 'Anchor said: ',
 }
 
 /**
@@ -15,50 +41,25 @@ interface MessageBubbleProps {
  * the rest of the transcript. `initial` runs once per mount, so the tokens
  * streaming into the last bubble re-render without re-animating anything.
  */
-const ENTRY = {
-  initial: { opacity: 0, y: 6 },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.2, ease: 'easeOut' },
-} as const
-
 export function MessageBubble({
   role,
   content,
   isStreaming,
 }: MessageBubbleProps) {
-  const isUser = role === 'user'
-
   return (
     <m.div
-      {...ENTRY}
+      {...MESSAGE_ENTRY}
       data-role={role}
-      className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+      className={`flex ${role === 'user' ? 'justify-end' : 'justify-start'}`}
     >
-      {isUser ? (
-        <div
-          data-testid="message-bubble"
-          className="relative max-w-[85%] rounded-2xl bg-[#EDF1F5] px-4 py-3 font-serif text-[17px] leading-[1.75] text-[#1A1A2E] sm:max-w-[70%]"
-        >
-          <span className="sr-only">You said: </span>
-          {isStreaming ? (
-            <TypingIndicator />
-          ) : (
-            <p className="whitespace-pre-wrap">{content}</p>
-          )}
-        </div>
-      ) : (
-        <div
-          data-testid="message-bubble"
-          className="relative w-full font-serif text-[17px] leading-[1.75] text-[#1A1A2E]"
-        >
-          <span className="sr-only">Anchor said: </span>
-          {isStreaming ? (
-            <TypingIndicator />
-          ) : (
-            <p className="whitespace-pre-wrap">{content}</p>
-          )}
-        </div>
-      )}
+      <div data-testid="message-bubble" className={bubbleVariants({ role })}>
+        <span className="sr-only">{SPOKEN_PREFIX[role]}</span>
+        {isStreaming ? (
+          <TypingIndicator />
+        ) : (
+          <p className="whitespace-pre-wrap">{content}</p>
+        )}
+      </div>
     </m.div>
   )
 }

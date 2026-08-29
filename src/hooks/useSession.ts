@@ -71,10 +71,18 @@ export function useSession(): Session {
   }, [start])
 
   const exit = useCallback(async () => {
+    // Leaving always works, even when the wipe does not: trapping somebody in a
+    // session they have asked to end would be the worse failure, and the
+    // server-side TTL still expires the transcript on its own. What is not
+    // acceptable is the server reporting success it cannot vouch for, which is
+    // why `DELETE /api/session` answers 503 when the delete does not land.
     try {
-      await fetch('/api/session', { method: 'DELETE' })
+      const res = await fetch('/api/session', { method: 'DELETE' })
+      if (!res.ok) {
+        console.error('[Session] Clear failed; transcript expires on its TTL.')
+      }
     } catch {
-      // best-effort cleanup
+      console.error('[Session] Clear request failed to reach the server.')
     }
     router.push('/')
   }, [router])

@@ -31,19 +31,7 @@ export const ChatInputSchema = z.object(
   { error: 'Request body must be a JSON object.' },
 )
 
-export const MoodInputSchema = z.object(
-  {
-    value: z
-      .number({ error: 'Mood value is required.' })
-      .int({ error: 'Mood value must be a whole number from 1 to 5.' })
-      .min(1, { error: 'Mood value must be a whole number from 1 to 5.' })
-      .max(5, { error: 'Mood value must be a whole number from 1 to 5.' }),
-  },
-  { error: 'Request body must be a JSON object.' },
-)
-
 export type ChatInput = z.infer<typeof ChatInputSchema>
-export type MoodInput = z.infer<typeof MoodInputSchema>
 
 export type ParseResult<T> =
   | { success: true; data: T }

@@ -45,13 +45,13 @@ describe('MessageBubble', () => {
     it('sits on a filled surface so it reads as the user turn', () => {
       render(<MessageBubble role="user" content="Hello" />)
       const bubble = screen.getByTestId('message-bubble')
-      expect(bubble.className).toContain('bg-[#EDF1F5]')
+      expect(bubble.className).toContain('bg-anchor-bubble')
     })
 
     it('uses the same high-contrast text colour as the assistant', () => {
       render(<MessageBubble role="user" content="Hello" />)
       const bubble = screen.getByTestId('message-bubble')
-      expect(bubble.className).toContain('text-[#1A1A2E]')
+      expect(bubble.className).toContain('text-anchor-ink-strong')
     })
 
     it('uses serif font matching assistant style', () => {
@@ -71,7 +71,7 @@ describe('MessageBubble', () => {
     it('uses dark text color for assistant messages', () => {
       render(<MessageBubble role="assistant" content="Hi there" />)
       const bubble = screen.getByTestId('message-bubble')
-      expect(bubble.className).toContain('text-[#1A1A2E]')
+      expect(bubble.className).toContain('text-anchor-ink-strong')
     })
   })
 

@@ -1,7 +1,7 @@
 import { render, screen, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom'
-import { CrisisResourceCard } from '@/components/chat/ResourceCard'
+import { CrisisResourceCard } from '@/components/chat/CrisisResourceCard'
 
 // userEvent.setup() installs its own clipboard stub, and the property is
 // getter-only, so these have to be defined after setup rather than assigned.

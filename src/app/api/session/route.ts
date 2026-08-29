@@ -32,11 +32,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 export async function DELETE(req: NextRequest): Promise<NextResponse> {
   const counters = verifyCounters(req.cookies.get(SESSION_COOKIE)?.value)
-  if (counters) {
-    await deleteTranscript(counters.id)
-  }
+  const deleted = counters ? await deleteTranscript(counters.id) : true
 
-  const response = NextResponse.json({ ok: true })
+  // The cookie is cleared either way: whatever happened to the stored
+  // transcript, holding a live session somebody has asked to end is worse. But
+  // a failed delete is reported as one rather than dressed up as `ok: true` —
+  // this endpoint backs a promise that the conversation is gone.
+  const response = deleted
+    ? NextResponse.json({ ok: true })
+    : NextResponse.json(
+        { error: 'Could not clear the conversation.' },
+        { status: 503 },
+      )
   response.cookies.delete(SESSION_COOKIE)
 
   return response

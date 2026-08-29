@@ -3,16 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { readChatStream } from '@/lib/chat-stream'
 import { CRISIS_WIDGET, BREATHING_WIDGET } from '@/lib/markers'
-import { CONTEXT_WINDOW } from '@/lib/session-config'
-
-export interface Message {
-  role: 'user' | 'assistant'
-  content: string
-  isStreaming?: boolean
-  /** Both set only by server widget events — never inferred from message text. */
-  showCrisisResources?: boolean
-  showBreathing?: boolean
-}
+import { HTTP_TOO_MANY_REQUESTS } from '@/lib/http'
+import type { Message } from '@/lib/types'
 
 const CONNECTING_MESSAGE = 'Anchor is connecting… please try again.'
 const CONNECTING_ERROR = 'Anchor is connecting…'
@@ -23,6 +15,28 @@ function retryWording(header: string | null): string {
   return Number.isFinite(seconds) && seconds > 0
     ? `about ${seconds} second${seconds === 1 ? '' : 's'}`
     : 'a moment'
+}
+
+/** A throttled send is a normal outcome, not a connection failure, so it gets
+ *  its own wording and the server's own Retry-After. */
+function rateLimitMessage(res: Response): string {
+  return `That was a lot at once. Try again in ${retryWording(
+    res.headers.get('Retry-After'),
+  )}.`
+}
+
+/** Replaces a half-streamed bubble with something someone can keep talking
+ *  from, rather than leaving an empty one on screen. */
+function failStreamingMessage(messages: Message[]): Message[] {
+  const updated = [...messages]
+  if (updated[updated.length - 1]?.isStreaming) {
+    updated[updated.length - 1] = {
+      role: 'assistant',
+      content: CONNECTING_MESSAGE,
+      isStreaming: false,
+    }
+  }
+  return updated
 }
 
 export interface ChatStream {
@@ -45,13 +59,11 @@ export function useChatStream(sessionId: string | null): ChatStream {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Read by `send` so the callback does not have to depend on `messages` —
-  // otherwise it is rebuilt on every streamed token and re-renders the input
-  // underneath the person typing.
-  const messagesRef = useRef<Message[]>(messages)
-  useEffect(() => {
-    messagesRef.current = messages
-  }, [messages])
+  // A stream nobody is reading still costs tokens and holds a connection open,
+  // so leaving the page or starting over cancels it rather than letting it run
+  // to completion unobserved.
+  const abortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => abortRef.current?.abort(), [])
 
   /** Applies one streamed change to the assistant bubble at the end. */
   const updateStreamingMessage = useCallback(
@@ -71,14 +83,11 @@ export function useChatStream(sessionId: string | null): ChatStream {
     async (content: string) => {
       if (!sessionId) return
 
-      // Taken before the optimistic appends: the server receives this message
-      // separately, so its own copy of the history must not already contain it.
-      // The server prefers its own copy, but sending ours means the
-      // conversation survives the cache being down.
-      const history = messagesRef.current
-        .filter((m) => !m.isStreaming && m.content.trim().length > 0)
-        .slice(-CONTEXT_WINDOW)
-        .map((m) => ({ role: m.role, content: m.content }))
+      // One stream at a time. The composer is disabled while a reply arrives,
+      // so this is belt-and-braces rather than a path anyone reaches.
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
 
       setError(null)
       setMessages((prev) => [...prev, { role: 'user', content }])
@@ -92,19 +101,17 @@ export function useChatStream(sessionId: string | null): ChatStream {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: content, messages: history }),
+          // Only the new message. The conversation itself is server-held; a
+          // client-supplied transcript would be an unauthenticated way to put
+          // words in Anchor's mouth and have the model read them back as its
+          // own prior turns.
+          body: JSON.stringify({ message: content }),
+          signal: controller.signal,
         })
 
-        // A throttled send is a normal outcome, not a connection failure, so it
-        // gets its own wording and the server's Retry-After rather than the
-        // generic reconnecting message.
-        if (res.status === 429) {
+        if (res.status === HTTP_TOO_MANY_REQUESTS) {
           setMessages((prev) => prev.slice(0, -1))
-          setError(
-            `That was a lot at once. Try again in ${retryWording(
-              res.headers.get('Retry-After'),
-            )}.`,
-          )
+          setError(rateLimitMessage(res))
           return
         }
 
@@ -138,17 +145,11 @@ export function useChatStream(sessionId: string | null): ChatStream {
 
         updateStreamingMessage((last) => ({ ...last, isStreaming: false }))
       } catch {
-        setMessages((prev) => {
-          const updated = [...prev]
-          if (updated[updated.length - 1]?.isStreaming) {
-            updated[updated.length - 1] = {
-              role: 'assistant',
-              content: CONNECTING_MESSAGE,
-              isStreaming: false,
-            }
-          }
-          return updated
-        })
+        // A cancel is something we asked for — the transcript it belonged to is
+        // already gone or going, so it must not leave a failure on screen.
+        if (controller.signal.aborted) return
+
+        setMessages(failStreamingMessage)
         setError(CONNECTING_ERROR)
       } finally {
         setIsLoading(false)
@@ -158,6 +159,7 @@ export function useChatStream(sessionId: string | null): ChatStream {
   )
 
   const reset = useCallback(() => {
+    abortRef.current?.abort()
     setMessages([])
     setError(null)
   }, [])

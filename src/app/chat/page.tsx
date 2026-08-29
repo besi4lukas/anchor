@@ -28,7 +28,7 @@ export default function Chat() {
     <MotionProvider>
       {/* h-dvh + overflow-hidden makes the transcript the only scrolling
           region, so the header stays put however long the conversation gets. */}
-      <div className="flex h-dvh flex-col overflow-hidden bg-[#F8FAFC]">
+      <div className="flex h-dvh flex-col overflow-hidden bg-anchor-surface">
         <ChatHeader
           expiresAt={session.expiresAt}
           extended={session.extended}

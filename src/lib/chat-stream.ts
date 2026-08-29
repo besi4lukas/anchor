@@ -61,6 +61,11 @@ function decodePayload(payload: string): ChatStreamEvent[] {
   return events
 }
 
+const DATA_PREFIX = 'data: '
+
+/** Far above any real line; a longer one means the stream is malformed. */
+const MAX_LINE_LENGTH = 64 * 1024
+
 export interface SSEParser {
   /** Events completed by this chunk. A partial trailing line is held back. */
   push(chunk: string): ChatStreamEvent[]
@@ -79,7 +84,9 @@ export function createSSEParser(): SSEParser {
   let buffer = ''
 
   const decodeLine = (line: string): ChatStreamEvent[] =>
-    line.startsWith('data: ') ? decodePayload(line.slice(6).trim()) : []
+    line.startsWith(DATA_PREFIX)
+      ? decodePayload(line.slice(DATA_PREFIX.length).trim())
+      : []
 
   return {
     push(chunk: string): ChatStreamEvent[] {
@@ -87,6 +94,12 @@ export function createSSEParser(): SSEParser {
 
       const parts = buffer.split('\n')
       buffer = parts.pop() ?? ''
+
+      // A stream that never sends a newline would otherwise grow this buffer
+      // without bound. Nothing legitimate approaches the cap — a whole reply is
+      // a fraction of it — so the honest response to crossing it is to drop the
+      // runaway line rather than keep accumulating.
+      if (buffer.length > MAX_LINE_LENGTH) buffer = ''
 
       return parts.flatMap(decodeLine)
     },
@@ -107,12 +120,19 @@ export async function* readChatStream(
   const decoder = new TextDecoder()
   const parser = createSSEParser()
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
+  // The consumer can stop early — an aborted request, a caller that breaks out
+  // of the loop — and an async generator runs its `finally` when it does.
+  // Without one the reader keeps its lock on a body nobody will read again.
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
 
-    yield* parser.push(decoder.decode(value, { stream: true }))
+      yield* parser.push(decoder.decode(value, { stream: true }))
+    }
+
+    yield* parser.flush()
+  } finally {
+    reader.releaseLock()
   }
-
-  yield* parser.flush()
 }

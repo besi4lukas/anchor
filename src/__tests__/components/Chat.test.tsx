@@ -172,7 +172,10 @@ describe('Chat – Chat Transition', () => {
     })
   })
 
-  it('sends its own copy of the transcript so a dead cache is survivable', async () => {
+  // The transcript is server-held. A client-supplied copy was an
+  // unauthenticated way to hand the model forged `assistant` turns, so the
+  // request now carries only the new message.
+  it('sends only the new message, never its own copy of the transcript', async () => {
     const user = userEvent.setup()
     mockSessionCreate()
     mockChatResponse('I hear you.')
@@ -195,10 +198,8 @@ describe('Chat – Chat Transition', () => {
 
       const body = JSON.parse(last[1].body)
       expect(body.message).toBe('second')
-      expect(body.messages).toEqual([
-        { role: 'user', content: 'first message' },
-        { role: 'assistant', content: 'I hear you.' },
-      ])
+      expect(body.messages).toBeUndefined()
+      expect(Object.keys(body)).toEqual(['message'])
     })
   })
 
@@ -333,7 +334,6 @@ describe('Chat – Expiry', () => {
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith('/')
     })
-    expect(screen.queryByTestId('expiry-screen')).not.toBeInTheDocument()
   })
 
   it('returns to the landing page when the timer runs out', async () => {

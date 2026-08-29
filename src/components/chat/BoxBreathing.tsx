@@ -1,12 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Button } from '@/components/ui/Button'
 
 const PHASE_SECONDS = 4
 const PHASES = ['Inhale', 'Hold', 'Exhale', 'Hold'] as const
 const CYCLE_SECONDS = PHASE_SECONDS * PHASES.length // 16
 const TOTAL_CYCLES = 4
 const TOTAL_SECONDS = CYCLE_SECONDS * TOTAL_CYCLES // 64
+const TICK_MS = 1000
+
+/** How far the orb shrinks on the exhale, as a fraction of its full size. */
+const CONTRACTED_SCALE = 0.6
 
 type Status = 'idle' | 'running' | 'done'
 
@@ -43,7 +48,7 @@ export function BoxBreathing() {
     stopTimer()
     setElapsed(0)
     setStatus('running')
-    intervalRef.current = setInterval(() => setElapsed((s) => s + 1), 1000)
+    intervalRef.current = setInterval(() => setElapsed((s) => s + 1), TICK_MS)
   }, [stopTimer])
 
   const cycle = Math.min(Math.floor(elapsed / CYCLE_SECONDS) + 1, TOTAL_CYCLES)
@@ -56,7 +61,7 @@ export function BoxBreathing() {
   // as long as the instruction says to keep going.
   const expanded =
     status === 'running' && (phaseIndex === 0 || phaseIndex === 1)
-  const scale = expanded ? 1 : 0.6
+  const scale = expanded ? 1 : CONTRACTED_SCALE
 
   return (
     <section
@@ -66,18 +71,16 @@ export function BoxBreathing() {
     >
       {status === 'idle' && (
         <div className="flex flex-col items-center gap-3 text-center">
-          <p className="text-sm font-medium text-[#1A1A2E]">Box breathing</p>
+          <p className="text-sm font-medium text-anchor-ink-strong">
+            Box breathing
+          </p>
           <p className="max-w-xs text-xs leading-relaxed text-gray-600">
             Four seconds in, four holding, four out, four holding. Four rounds,
             a little over a minute.
           </p>
-          <button
-            type="button"
-            onClick={start}
-            className="min-h-[44px] rounded-full bg-anchor-accent px-6 text-sm text-anchor-accent-fg transition-colors hover:bg-anchor-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-anchor-accent"
-          >
+          <Button variant="pill" ring="accent" onClick={start}>
             Start
-          </button>
+          </Button>
         </div>
       )}
 
@@ -96,7 +99,9 @@ export function BoxBreathing() {
           </div>
 
           <div aria-live="polite" className="text-center">
-            <p className="text-lg font-medium text-[#1A1A2E]">{phase}</p>
+            <p className="text-lg font-medium text-anchor-ink-strong">
+              {phase}
+            </p>
             <p
               data-testid="breathing-tick"
               className="text-3xl font-light tabular-nums text-anchor-accent"
@@ -113,18 +118,16 @@ export function BoxBreathing() {
 
       {status === 'done' && (
         <div className="flex flex-col items-center gap-3 text-center">
-          <p className="text-sm font-medium text-[#1A1A2E]">Well done</p>
+          <p className="text-sm font-medium text-anchor-ink-strong">
+            Well done
+          </p>
           <p className="max-w-xs text-xs leading-relaxed text-gray-600">
             That is four full rounds. Notice how your body feels compared to a
             minute ago.
           </p>
-          <button
-            type="button"
-            onClick={start}
-            className="min-h-[44px] rounded-full border border-anchor-line px-6 text-sm text-[#1A1A2E] transition-colors hover:bg-anchor-bg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-anchor-accent"
-          >
+          <Button variant="pillOutline" ring="accent" onClick={start}>
             Go again
-          </button>
+          </Button>
         </div>
       )}
     </section>
