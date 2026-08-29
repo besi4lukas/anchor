@@ -42,17 +42,9 @@ function chatRequest(overrides: Partial<ChatRequest> = {}): ChatRequest {
   return {
     counters: { ...createCounters(), message_count: 4 },
     message: 'hello',
+    clientHistory: [],
     ...overrides,
   }
-}
-
-/** The only way history reaches a turn: the server's own stored transcript. */
-function storeTranscript(messages: ChatMessage[]): void {
-  mockGet.mockImplementation((key: string) =>
-    Promise.resolve(
-      key.startsWith('transcript:') ? JSON.stringify(messages) : null,
-    ),
-  )
 }
 
 beforeEach(() => {
@@ -123,44 +115,56 @@ describe('buildChatContext', () => {
     expect(mockModerate).toHaveBeenCalledWith('hello', true)
   })
 
-  it('takes its history from the stored transcript', async () => {
+  it('prefers the stored transcript over the client copy', async () => {
     const stored: ChatMessage[] = [
       { role: 'user', content: 'from redis', timestamp: 1 },
     ]
-    storeTranscript(stored)
+    mockGet.mockImplementation((key: string) =>
+      Promise.resolve(
+        key.startsWith('transcript:') ? JSON.stringify(stored) : null,
+      ),
+    )
 
-    const chat = await buildChatContext(chatRequest())
+    const chat = await buildChatContext(
+      chatRequest({
+        clientHistory: [{ role: 'user', content: 'from client', timestamp: 1 }],
+      }),
+    )
 
     expect(chat.history).toEqual(stored)
   })
 
-  // There is no client copy to fall back to any more: accepting one was how
-  // forged `assistant` turns reached the model, and `persist` then wrote them
-  // back as the trusted record.
-  it('starts empty when Redis has nothing, rather than trusting the client', async () => {
-    const chat = await buildChatContext(chatRequest())
+  it('falls back to the client copy when Redis has nothing', async () => {
+    const clientHistory: ChatMessage[] = [
+      { role: 'user', content: 'from client', timestamp: 1 },
+    ]
 
-    expect(chat.history).toEqual([])
-    expect(chat.claudeMessages).toEqual([{ role: 'user', content: 'hello' }])
+    const chat = await buildChatContext(chatRequest({ clientHistory }))
+
+    expect(chat.history).toEqual(clientHistory)
   })
 
   // So Claude never reads its own old markers back as a house style.
   it('strips markers out of assistant history, leaving user turns alone', async () => {
-    storeTranscript([
-      { role: 'user', content: 'tell me [SHOW_BREATHING]', timestamp: 1 },
-      { role: 'assistant', content: 'here [SHOW_BREATHING]', timestamp: 2 },
-    ])
-
-    const chat = await buildChatContext(chatRequest())
+    const chat = await buildChatContext(
+      chatRequest({
+        clientHistory: [
+          { role: 'user', content: 'tell me [SHOW_BREATHING]', timestamp: 1 },
+          { role: 'assistant', content: 'here [SHOW_BREATHING]', timestamp: 2 },
+        ],
+      }),
+    )
 
     expect(chat.history[0].content).toBe('tell me [SHOW_BREATHING]')
     expect(chat.history[1].content).toBe('here')
   })
 
   it('appends the new user turn to what Claude sees', async () => {
-    storeTranscript([{ role: 'user', content: 'earlier', timestamp: 1 }])
-
-    const chat = await buildChatContext(chatRequest())
+    const chat = await buildChatContext(
+      chatRequest({
+        clientHistory: [{ role: 'user', content: 'earlier', timestamp: 1 }],
+      }),
+    )
 
     expect(chat.claudeMessages).toEqual([
       { role: 'user', content: 'earlier' },
@@ -169,15 +173,12 @@ describe('buildChatContext', () => {
   })
 
   it('caps what Claude sees at the context window', async () => {
-    storeTranscript(
-      Array.from({ length: CONTEXT_WINDOW + 5 }, (_, i) => ({
-        role: 'user' as const,
-        content: `t${i}`,
-        timestamp: i,
-      })),
+    const clientHistory: ChatMessage[] = Array.from(
+      { length: CONTEXT_WINDOW + 5 },
+      (_, i) => ({ role: 'user' as const, content: `t${i}`, timestamp: i }),
     )
 
-    const chat = await buildChatContext(chatRequest())
+    const chat = await buildChatContext(chatRequest({ clientHistory }))
 
     expect(chat.claudeMessages).toHaveLength(CONTEXT_WINDOW)
     expect(chat.claudeMessages.at(-1)?.content).toBe('hello')
@@ -211,28 +212,31 @@ describe('buildChatContext', () => {
     })
 
     it('caps the stored transcript', async () => {
-      storeTranscript(
-        Array.from({ length: MAX_MESSAGES + 5 }, (_, i) => ({
-          role: 'user' as const,
-          content: `t${i}`,
-          timestamp: i,
-        })),
+      const clientHistory: ChatMessage[] = Array.from(
+        { length: MAX_MESSAGES + 5 },
+        (_, i) => ({ role: 'user' as const, content: `t${i}`, timestamp: i }),
       )
 
-      const chat = await buildChatContext(chatRequest())
+      const chat = await buildChatContext(chatRequest({ clientHistory }))
       await chat.persist('reply')
 
       expect(JSON.parse(mockSet.mock.calls[0][1])).toHaveLength(MAX_MESSAGES)
     })
 
-    // It closes over the stripped history. Capturing the raw copy instead
-    // would put markers back into storage, turns later.
+    // It closes over the stripped, Redis-preferred history. Capturing the raw
+    // copy instead would put markers back into storage, turns later.
     it('stores the stripped history, not the raw one', async () => {
-      storeTranscript([
-        { role: 'assistant', content: 'old [SHOW_BREATHING]', timestamp: 1 },
-      ])
-
-      const chat = await buildChatContext(chatRequest())
+      const chat = await buildChatContext(
+        chatRequest({
+          clientHistory: [
+            {
+              role: 'assistant',
+              content: 'old [SHOW_BREATHING]',
+              timestamp: 1,
+            },
+          ],
+        }),
+      )
       await chat.persist('reply')
 
       expect(JSON.parse(mockSet.mock.calls[0][1])[0].content).toBe('old')

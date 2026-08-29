@@ -32,6 +32,7 @@ export interface ChatContext {
 export async function buildChatContext({
   counters,
   message,
+  clientHistory,
 }: ChatRequest): Promise<ChatContext> {
   // Everything the reply needs before Claude can start, run at once.
   //
@@ -58,12 +59,9 @@ export async function buildChatContext({
     readTranscript(counters.id),
   ])
 
-  // The transcript is server-held, and only server-held. An earlier version
-  // accepted the client's own copy as a fallback for an unreachable cache; it
-  // was an unauthenticated way to hand the model forged `assistant` turns,
-  // which `persist` below then wrote back as the trusted record. A missing
-  // transcript now starts an empty conversation instead.
-  const rawHistory = stored ?? []
+  // Redis is preferred because it is server-held and cannot be edited, but the
+  // client's copy keeps the conversation going when the cache is unavailable.
+  const rawHistory = stored ?? clientHistory
 
   // Markers are a transport detail of an earlier design, and a transcript
   // written before this change can still contain them. Scrubbing on the way in

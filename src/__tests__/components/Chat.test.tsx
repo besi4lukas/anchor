@@ -172,10 +172,7 @@ describe('Chat – Chat Transition', () => {
     })
   })
 
-  // The transcript is server-held. A client-supplied copy was an
-  // unauthenticated way to hand the model forged `assistant` turns, so the
-  // request now carries only the new message.
-  it('sends only the new message, never its own copy of the transcript', async () => {
+  it('sends its own copy of the transcript so a dead cache is survivable', async () => {
     const user = userEvent.setup()
     mockSessionCreate()
     mockChatResponse('I hear you.')
@@ -198,8 +195,10 @@ describe('Chat – Chat Transition', () => {
 
       const body = JSON.parse(last[1].body)
       expect(body.message).toBe('second')
-      expect(body.messages).toBeUndefined()
-      expect(Object.keys(body)).toEqual(['message'])
+      expect(body.messages).toEqual([
+        { role: 'user', content: 'first message' },
+        { role: 'assistant', content: 'I hear you.' },
+      ])
     })
   })
 

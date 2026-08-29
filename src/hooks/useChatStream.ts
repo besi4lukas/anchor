@@ -4,11 +4,22 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { readChatStream } from '@/lib/chat-stream'
 import { CRISIS_WIDGET, BREATHING_WIDGET } from '@/lib/markers'
 import { HTTP_TOO_MANY_REQUESTS } from '@/lib/http'
+import { CONTEXT_WINDOW } from '@/lib/session-config'
 import { retryWording } from '@/lib/retry-wording'
 import type { Message } from '@/lib/types'
 
 const CONNECTING_MESSAGE = 'Anchor is connecting… please try again.'
 const CONNECTING_ERROR = 'Anchor is connecting…'
+
+/** The transcript the client posts alongside the new message. Its own copy is
+ *  a fallback for the cache being down, so it must not already contain the
+ *  message the server is receiving separately. */
+function historyFor(messages: Message[]) {
+  return messages
+    .filter((m) => !m.isStreaming && m.content.trim().length > 0)
+    .slice(-CONTEXT_WINDOW)
+    .map((m) => ({ role: m.role, content: m.content }))
+}
 
 /** A throttled send is a normal outcome, not a connection failure, so it gets
  *  its own wording and the server's own Retry-After. */
@@ -58,6 +69,14 @@ export function useChatStream(sessionId: string | null): ChatStream {
   const abortRef = useRef<AbortController | null>(null)
   useEffect(() => () => abortRef.current?.abort(), [])
 
+  // Read by `send` so the callback does not have to depend on `messages` —
+  // otherwise it is rebuilt on every streamed token and re-renders the input
+  // underneath the person typing.
+  const messagesRef = useRef<Message[]>(messages)
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
   /** Applies one streamed change to the assistant bubble at the end. */
   const updateStreamingMessage = useCallback(
     (change: (message: Message) => Message) => {
@@ -82,6 +101,10 @@ export function useChatStream(sessionId: string | null): ChatStream {
       const controller = new AbortController()
       abortRef.current = controller
 
+      // Taken before the optimistic appends below, so the history posted
+      // excludes the message being sent.
+      const history = historyFor(messagesRef.current)
+
       setError(null)
       setMessages((prev) => [...prev, { role: 'user', content }])
       setMessages((prev) => [
@@ -94,11 +117,7 @@ export function useChatStream(sessionId: string | null): ChatStream {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          // Only the new message. The conversation itself is server-held; a
-          // client-supplied transcript would be an unauthenticated way to put
-          // words in Anchor's mouth and have the model read them back as its
-          // own prior turns.
-          body: JSON.stringify({ message: content }),
+          body: JSON.stringify({ message: content, messages: history }),
           signal: controller.signal,
         })
 

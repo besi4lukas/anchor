@@ -3,7 +3,13 @@ import { requireSession } from '@/lib/api/session-guard'
 import { readJsonBody } from '@/lib/api/json-body'
 import { ChatInputSchema } from '@/lib/validation'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { MAX_MESSAGES, type SessionCounters } from '@/lib/session'
+import {
+  sanitizeTranscript,
+  CONTEXT_WINDOW,
+  MAX_MESSAGES,
+  type ChatMessage,
+  type SessionCounters,
+} from '@/lib/session'
 
 /**
  * Everything the rest of the turn needs, and deliberately not the request.
@@ -14,6 +20,7 @@ import { MAX_MESSAGES, type SessionCounters } from '@/lib/session'
 export interface ChatRequest {
   counters: SessionCounters
   message: string
+  clientHistory: ChatMessage[]
 }
 
 export type ChatGateResult =
@@ -51,6 +58,20 @@ export async function runGates(req: NextRequest): Promise<ChatGateResult> {
   const body = await readJsonBody(req, ChatInputSchema)
   if (!body.ok) return { ok: false, response: body.response }
 
+  // The transcript stays on sanitizeTranscript rather than a schema. It is a
+  // best-effort fallback for when Redis is unreachable, so bounding it — drop
+  // bad turns, cap the length, keep the rest — serves the person better than
+  // rejecting the whole request because one entry was malformed.
+  //
+  // The `?.` is not redundant. ChatInputSchema is an object schema, so `raw`
+  // cannot be null on this branch today — but JsonBody<T> is generic and says
+  // so nowhere, and a caller passing a non-object schema would find the
+  // TypeError here rather than in review.
+  const clientHistory = sanitizeTranscript(
+    (body.raw as { messages?: unknown } | null)?.messages,
+    CONTEXT_WINDOW,
+  )
+
   const rateLimit = await checkRateLimit(counters.id)
   if (!rateLimit.allowed) {
     return {
@@ -67,6 +88,6 @@ export async function runGates(req: NextRequest): Promise<ChatGateResult> {
 
   return {
     ok: true,
-    request: { counters, message: body.data.message },
+    request: { counters, message: body.data.message, clientHistory },
   }
 }

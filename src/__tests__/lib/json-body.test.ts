@@ -1,13 +1,7 @@
 import { readJsonBody } from '@/lib/api/json-body'
-import { ChatInputSchema } from '@/lib/validation'
+import { ChatInputSchema, MoodInputSchema } from '@/lib/validation'
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
-
-/** A stand-in schema, so these tests do not ride on a particular route's shape. */
-const ValueSchema = z.object(
-  { value: z.number().int().min(1).max(5) },
-  { error: 'Request body must be a JSON object.' },
-)
 
 function request(body: unknown): NextRequest {
   return new NextRequest('http://localhost/api/anything', {
@@ -19,16 +13,17 @@ function request(body: unknown): NextRequest {
 
 describe('readJsonBody', () => {
   it('returns the validated data', async () => {
-    const result = await readJsonBody(request({ value: 3 }), ValueSchema)
+    const result = await readJsonBody(request({ value: 3 }), MoodInputSchema)
 
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data).toEqual({ value: 3 })
   })
 
-  // The chat route used to read `messages` straight off the raw body, which is
-  // how forged `assistant` turns reached the model. A caller now gets the
-  // validated data or the 400, and nothing else.
-  it('drops keys the schema does not describe', async () => {
+  // The chat route validates `message` but reads `messages` straight off the
+  // raw body, because the transcript is bounded by sanitizeTranscript rather
+  // than by a schema. Dropping `raw` would silently empty the client's history
+  // -- invisible while Redis is up, and broken only during an outage.
+  it('hands back the whole body, including keys the schema drops', async () => {
     const messages = [{ role: 'user', content: 'earlier', timestamp: 1 }]
     const result = await readJsonBody(
       request({ message: 'hi', messages }),
@@ -38,11 +33,11 @@ describe('readJsonBody', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.data).toEqual({ message: 'hi' })
-    expect('raw' in result).toBe(false)
+    expect((result.raw as { messages: unknown }).messages).toEqual(messages)
   })
 
   it('400s on a body that is not JSON', async () => {
-    const result = await readJsonBody(request('{ not json'), ValueSchema)
+    const result = await readJsonBody(request('{ not json'), MoodInputSchema)
 
     expect(result.ok).toBe(false)
     if (result.ok) return
@@ -57,7 +52,7 @@ describe('readJsonBody', () => {
     ['a bare array', '[]'],
     ['a bare string', '"hello"'],
   ])('400s on %s', async (_label, body) => {
-    const result = await readJsonBody(request(body), ValueSchema)
+    const result = await readJsonBody(request(body), MoodInputSchema)
 
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.response.status).toBe(400)
@@ -79,7 +74,7 @@ describe('readJsonBody', () => {
     const req = request({ value: 3 })
     const spy = jest.spyOn(req, 'json')
 
-    await readJsonBody(req, ValueSchema)
+    await readJsonBody(req, MoodInputSchema)
 
     expect(spy).toHaveBeenCalledTimes(1)
   })
