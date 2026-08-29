@@ -14,15 +14,11 @@ interface WelcomeScreenProps {
 export function WelcomeScreen({ onSend, disabled }: WelcomeScreenProps) {
   return (
     <main className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
-      <h1 className="mb-6 font-serif text-[40px] font-medium tracking-tight text-[#1A1A2E]">
+      <h1 className="mb-6 font-serif text-[40px] font-medium tracking-tight text-anchor-ink-strong">
         Hey Stranger!
       </h1>
       <div className="w-full max-w-3xl">
-        <ChatInput
-          onSend={onSend}
-          disabled={disabled}
-          placeholder="How are you feeling right now..."
-        />
+        <ChatInput onSend={onSend} disabled={disabled} />
       </div>
     </main>
   )

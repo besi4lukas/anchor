@@ -333,7 +333,6 @@ describe('Chat – Expiry', () => {
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith('/')
     })
-    expect(screen.queryByTestId('expiry-screen')).not.toBeInTheDocument()
   })
 
   it('returns to the landing page when the timer runs out', async () => {

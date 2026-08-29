@@ -8,6 +8,8 @@ import {
   type ChangeEvent,
 } from 'react'
 import { ArrowUp } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
+import { FIRST_MESSAGE_PLACEHOLDER } from '@/lib/copy'
 
 interface ChatInputProps {
   onSend: (msg: string) => void
@@ -18,7 +20,7 @@ interface ChatInputProps {
 export function ChatInput({
   onSend,
   disabled,
-  placeholder = 'How are you feeling right now...',
+  placeholder = FIRST_MESSAGE_PLACEHOLDER,
 }: ChatInputProps) {
   const [value, setValue] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -58,7 +60,7 @@ export function ChatInput({
   return (
     <div
       data-testid="chat-input"
-      className="relative flex w-full items-end gap-2 rounded-2xl border border-gray-200 bg-white p-2 shadow-[0_1px_2px_rgba(16,24,40,0.05),0_12px_28px_-12px_rgba(16,24,40,0.16)] transition-colors focus-within:border-[#A6EEBF] focus-within:ring-2 focus-within:ring-[#A6EEBF]/40"
+      className="relative flex w-full items-end gap-2 rounded-2xl border border-gray-200 bg-white p-2 shadow-[0_1px_2px_rgba(16,24,40,0.05),0_12px_28px_-12px_rgba(16,24,40,0.16)] transition-colors focus-within:border-anchor-mint focus-within:ring-2 focus-within:ring-anchor-mint/40"
     >
       <textarea
         ref={textareaRef}
@@ -70,20 +72,20 @@ export function ChatInput({
         aria-label="Message input"
         aria-describedby="chat-input-hint"
         rows={1}
-        className="max-h-[200px] min-h-[74px] w-full flex-1 resize-none bg-transparent px-3 py-2 text-[15px] leading-relaxed text-[#1A1A2E] placeholder-gray-500 outline-none disabled:cursor-not-allowed"
+        className="max-h-[200px] min-h-[74px] w-full flex-1 resize-none bg-transparent px-3 py-2 text-[15px] leading-relaxed text-anchor-ink-strong placeholder-gray-500 outline-none disabled:cursor-not-allowed"
       />
-      <button
-        type="button"
+      {/* The icon variant's mint matches the border the wrapper turns on
+          focus, which is also the accent the primary buttons elsewhere use.
+          Dark icon rather than white: on a colour this light, white would not
+          be readable. */}
+      <Button
+        variant="icon"
         onClick={send}
         disabled={!canSend}
         aria-label="Send message"
-        // Matches the mint the wrapper's border turns on focus, which is also
-        // the accent the primary buttons elsewhere use. Dark icon rather than
-        // white: on a colour this light, white would not be readable.
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#A6EEBF] text-[#1A1A2E] transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1A2E] disabled:cursor-not-allowed disabled:opacity-30"
       >
         <ArrowUp aria-hidden className="h-5 w-5" />
-      </button>
+      </Button>
       <span id="chat-input-hint" className="sr-only">
         Press Enter to send, Shift plus Enter for a new line.
       </span>

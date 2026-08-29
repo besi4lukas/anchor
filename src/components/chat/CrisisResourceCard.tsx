@@ -1,6 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { focusRing } from '@/components/ui/focus-ring'
+import { cn } from '@/lib/utils'
+
+/** How long 'Copied' stays up before the button offers to copy again. */
+const COPIED_RESET_MS = 2000
 
 interface CrisisResource {
   name: string
@@ -43,7 +48,14 @@ const RESOURCES: CrisisResource[] = [
   },
 ]
 
-function CopyButton({ value, label }: { value: string; label: string }) {
+interface CopyButtonProps {
+  /** Digits only, ready to paste into a dialler. */
+  value: string
+  /** Resource name, used to distinguish the buttons for screen readers. */
+  label: string
+}
+
+function CopyButton({ value, label }: CopyButtonProps) {
   const [copied, setCopied] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -65,7 +77,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
       await navigator.clipboard.writeText(value)
       setCopied(true)
       if (timerRef.current) clearTimeout(timerRef.current)
-      timerRef.current = setTimeout(() => setCopied(false), 2000)
+      timerRef.current = setTimeout(() => setCopied(false), COPIED_RESET_MS)
     } catch {
       // Access can be refused outright; the number is on screen to read either
       // way, so there is nothing worth interrupting them about.
@@ -77,7 +89,10 @@ function CopyButton({ value, label }: { value: string; label: string }) {
       type="button"
       onClick={copy}
       aria-label={`Copy ${label}`}
-      className="min-h-[44px] shrink-0 rounded-lg px-3 text-xs font-medium text-amber-900 underline underline-offset-2 transition-colors hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+      className={cn(
+        focusRing({ ring: 'amber' }),
+        'min-h-[44px] shrink-0 rounded-lg px-3 text-xs font-medium text-amber-900 underline underline-offset-2 transition-colors hover:bg-amber-100',
+      )}
     >
       {copied ? 'Copied' : 'Copy'}
     </button>
@@ -111,7 +126,10 @@ export function CrisisResourceCard() {
           >
             <a
               href={href}
-              className="flex min-h-[44px] flex-1 flex-col justify-center gap-0.5 rounded-lg px-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+              className={cn(
+                focusRing({ ring: 'amber' }),
+                'flex min-h-[44px] flex-1 flex-col justify-center gap-0.5 rounded-lg px-3 py-2',
+              )}
             >
               <span className="text-sm font-medium text-amber-950">{name}</span>
               <span className="text-xs leading-snug text-amber-800">
@@ -139,7 +157,10 @@ export function CrisisResourceCard() {
         href="https://findahelpline.com"
         target="_blank"
         rel="noopener noreferrer"
-        className="mt-3 flex min-h-[44px] items-center text-xs font-medium text-amber-900 underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+        className={cn(
+          focusRing({ ring: 'amber' }),
+          'mt-3 flex min-h-[44px] items-center text-xs font-medium text-amber-900 underline underline-offset-2',
+        )}
       >
         Outside the US? Find a helpline in your country
       </a>

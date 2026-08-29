@@ -1,6 +1,7 @@
 'use client'
 
 import { SessionTimer } from '@/components/chat/SessionTimer'
+import { Button } from '@/components/ui/Button'
 
 interface ChatHeaderProps {
   expiresAt: string | null
@@ -21,13 +22,13 @@ export function ChatHeader({
 }: ChatHeaderProps) {
   return (
     <header className="z-10 flex shrink-0 items-center justify-between border-b border-gray-100 bg-white/80 px-4 py-2 backdrop-blur-sm">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         onClick={onRestart}
-        className="rounded-lg px-2 py-2 font-serif text-lg font-medium text-[#1A1A2E] transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1A2E]"
+        className="py-2 font-serif text-lg font-medium text-anchor-ink-strong transition-opacity hover:opacity-80"
       >
         Anchor
-      </button>
+      </Button>
       <div className="flex items-center gap-2">
         {expiresAt && (
           <SessionTimer
@@ -37,13 +38,13 @@ export function ChatHeader({
             onExtend={onExtend}
           />
         )}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           onClick={onExit}
-          className="rounded-lg px-2 py-3 text-xs font-medium text-gray-600 transition-colors hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1A2E]"
+          className="py-3 text-xs font-medium text-gray-600 transition-colors hover:text-gray-900"
         >
           Clear &amp; Exit
-        </button>
+        </Button>
       </div>
     </header>
   )

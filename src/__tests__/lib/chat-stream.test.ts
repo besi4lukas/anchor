@@ -266,3 +266,29 @@ describe('encodeChatStream / createSSEParser round trip', () => {
     ])
   })
 })
+
+describe('runaway lines', () => {
+  // A stream that never sends a newline would otherwise accumulate in the
+  // parser's buffer for as long as it kept talking.
+  it('drops a line that grows past the cap instead of buffering it', () => {
+    const parser = createSSEParser()
+
+    for (let i = 0; i < 40; i++) {
+      expect(parser.push('x'.repeat(4096))).toEqual([])
+    }
+
+    // The runaway is discarded, and the parser still works afterwards.
+    expect(parser.flush()).toEqual([])
+    expect(parser.push('data: {"text":"still here"}\n')).toEqual([
+      { type: 'text', text: 'still here' },
+    ])
+  })
+
+  it('keeps a long-but-legitimate line intact', () => {
+    const parser = createSSEParser()
+    const text = 'y'.repeat(8000)
+
+    expect(parser.push(`data: ${JSON.stringify({ text })}`)).toEqual([])
+    expect(parser.flush()).toEqual([{ type: 'text', text }])
+  })
+})

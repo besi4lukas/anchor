@@ -4,17 +4,16 @@ import { useEffect, useMemo, useRef } from 'react'
 import { m } from 'framer-motion'
 import { MessageBubble } from '@/components/chat/MessageBubble'
 import { ChatInput } from '@/components/chat/ChatInput'
-import { CrisisResourceCard } from '@/components/chat/ResourceCard'
+import { CrisisResourceCard } from '@/components/chat/CrisisResourceCard'
 import { BoxBreathing } from '@/components/chat/BoxBreathing'
+import { WIDGET_ENTRY } from '@/components/chat/motion'
 import { stripMarkers } from '@/lib/markers'
-import type { Message } from '@/hooks/useChatStream'
-
-/** Opacity only — no movement, nothing that can push surrounding text around. */
-const WIDGET_ENTRY = {
-  initial: { opacity: 0 },
-  animate: { opacity: 1 },
-  transition: { duration: 0.2, ease: 'easeOut' },
-} as const
+import {
+  FIRST_MESSAGE_PLACEHOLDER,
+  REPLY_PLACEHOLDER,
+  MODEL_DISCLAIMER,
+} from '@/lib/copy'
+import type { Message } from '@/lib/types'
 
 interface TranscriptProps {
   messages: Message[]
@@ -44,6 +43,54 @@ function useLatestWidgetIndices(messages: Message[]) {
   }, [messages])
 }
 
+interface TranscriptMessageProps {
+  message: Message
+  showCrisisResources: boolean
+  showBreathing: boolean
+}
+
+/**
+ * One turn, plus whatever the server asked to be shown beside it.
+ *
+ * Widgets fade without moving. They arrive under a message that has just
+ * settled, and sliding a second block in would read as the page still loading.
+ */
+function TranscriptMessage({
+  message,
+  showCrisisResources,
+  showBreathing,
+}: TranscriptMessageProps) {
+  if (message.role !== 'assistant') {
+    return (
+      <MessageBubble
+        role={message.role}
+        content={message.content}
+        isStreaming={message.isStreaming}
+      />
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <MessageBubble
+        role={message.role}
+        content={stripMarkers(message.content)}
+        isStreaming={message.isStreaming}
+      />
+      {showCrisisResources && (
+        <m.div {...WIDGET_ENTRY}>
+          <CrisisResourceCard />
+        </m.div>
+      )}
+      {showBreathing && (
+        <m.div {...WIDGET_ENTRY}>
+          <BoxBreathing />
+        </m.div>
+      )}
+    </div>
+  )
+}
+
 export function Transcript({
   messages,
   error,
@@ -58,7 +105,8 @@ export function Transcript({
   }, [messages])
 
   const hasAssistantResponded = messages.some(
-    (m) => m.role === 'assistant' && m.content.trim().length > 0,
+    (message) =>
+      message.role === 'assistant' && message.content.trim().length > 0,
   )
 
   return (
@@ -71,41 +119,17 @@ export function Transcript({
           aria-label="Conversation"
           className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6"
         >
-          {messages.map((msg, i) => {
-            if (msg.role !== 'assistant') {
-              return (
-                <MessageBubble
-                  key={i}
-                  role={msg.role}
-                  content={msg.content}
-                  isStreaming={msg.isStreaming}
-                />
-              )
-            }
-
-            return (
-              <div key={i} className="flex flex-col gap-3">
-                <MessageBubble
-                  role={msg.role}
-                  content={stripMarkers(msg.content)}
-                  isStreaming={msg.isStreaming}
-                />
-                {/* Widgets fade without moving. They arrive under a message
-                  that has just settled, and sliding a second block would
-                  read as the page still loading. */}
-                {i === latest.crisis && (
-                  <m.div {...WIDGET_ENTRY}>
-                    <CrisisResourceCard />
-                  </m.div>
-                )}
-                {i === latest.breathing && (
-                  <m.div {...WIDGET_ENTRY}>
-                    <BoxBreathing />
-                  </m.div>
-                )}
-              </div>
-            )
-          })}
+          {/* Index as key: this list only ever appends, and a stable identity
+              per position is what keeps a bubble from remounting — and
+              re-running its entry animation — on every streamed token. */}
+          {messages.map((message, i) => (
+            <TranscriptMessage
+              key={i}
+              message={message}
+              showCrisisResources={i === latest.crisis}
+              showBreathing={i === latest.breathing}
+            />
+          ))}
           {error && (
             <p
               data-testid="chat-error"
@@ -119,20 +143,20 @@ export function Transcript({
         </div>
       </div>
 
-      <div className="shrink-0 bg-[#F8FAFC] px-4 pb-4 pt-3">
+      <div className="shrink-0 bg-anchor-surface px-4 pb-4 pt-3">
         <div className="mx-auto max-w-3xl">
           <ChatInput
             onSend={onSend}
             disabled={isLoading}
             placeholder={
               hasAssistantResponded
-                ? 'Reply...'
-                : 'How are you feeling right now...'
+                ? REPLY_PLACEHOLDER
+                : FIRST_MESSAGE_PLACEHOLDER
             }
           />
           {hasAssistantResponded && (
             <p className="mt-3 text-center text-[13px] text-gray-600">
-              Anchor can make mistakes. If it is an emergency call 911
+              {MODEL_DISCLAIMER}
             </p>
           )}
         </div>

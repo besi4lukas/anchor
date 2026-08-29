@@ -1,7 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
 import { m } from 'framer-motion'
+import { focusRing } from '@/components/ui/focus-ring'
+import { useCountdown } from '@/hooks/useCountdown'
+import { useExtendSession } from '@/hooks/useExtendSession'
+import { cn } from '@/lib/utils'
+import { formatCountdown, splitCountdown } from '@/lib/time'
+import { ENTRY_TRANSITION } from '@/components/chat/motion'
 
 /** Offer more time only once the shortage is real. */
 const OFFER_THRESHOLD_SECONDS = 300
@@ -19,55 +24,10 @@ export function SessionTimer({
   extended = false,
   onExtend,
 }: SessionTimerProps) {
-  const calcRemaining = useCallback(() => {
-    const expiresMs = new Date(expiresAt).getTime()
-    if (!Number.isFinite(expiresMs)) return 0
-    return Math.max(0, Math.floor((expiresMs - Date.now()) / 1000))
-  }, [expiresAt])
+  const remaining = useCountdown(expiresAt, onExpire)
+  const { extend, isExtending } = useExtendSession({ expiresAt, onExtend })
 
-  const [remaining, setRemaining] = useState(calcRemaining)
-
-  useEffect(() => {
-    setRemaining(calcRemaining())
-
-    const interval = setInterval(() => {
-      const next = calcRemaining()
-      setRemaining(next)
-      if (next <= 0) {
-        clearInterval(interval)
-        onExpire()
-      }
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [calcRemaining, onExpire])
-
-  const [isExtending, setIsExtending] = useState(false)
-
-  const handleExtend = useCallback(async () => {
-    if (isExtending) return
-    setIsExtending(true)
-    try {
-      const res = await fetch('/api/session/extend', { method: 'PATCH' })
-      if (res.ok) {
-        const data: unknown = await res.json()
-        const newExpiry = (data as { newExpiry?: unknown })?.newExpiry
-        if (typeof newExpiry === 'string') onExtend?.(newExpiry)
-      } else if (res.status === 409) {
-        // Already spent. Reflect that rather than leaving a button that cannot
-        // work — the parent hides the offer once it knows.
-        onExtend?.(expiresAt)
-      }
-    } catch {
-      // Leave the offer up; the session has not changed and they can retry.
-    } finally {
-      setIsExtending(false)
-    }
-  }, [isExtending, onExtend, expiresAt])
-
-  const minutes = Math.floor(remaining / 60)
-  const seconds = remaining % 60
-  const display = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  const { minutes, seconds } = splitCountdown(remaining)
   const isUrgent = remaining < OFFER_THRESHOLD_SECONDS
   const canExtend = isUrgent && remaining > 0 && !extended && !!onExtend
 
@@ -80,13 +40,16 @@ export function SessionTimer({
       {canExtend && (
         <m.button
           type="button"
-          onClick={handleExtend}
+          onClick={extend}
           disabled={isExtending}
           data-testid="extend-session"
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-800 transition-colors hover:bg-orange-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 disabled:opacity-60"
+          transition={ENTRY_TRANSITION}
+          className={cn(
+            focusRing({ ring: 'orange' }),
+            'rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-800 transition-colors hover:bg-orange-100 disabled:opacity-60',
+          )}
         >
           {isExtending ? 'Extending…' : 'Extend 60 min'}
         </m.button>
@@ -95,13 +58,14 @@ export function SessionTimer({
         data-testid="session-timer"
         role="timer"
         aria-label={label}
-        className={`font-mono text-xs tabular-nums ${
+        className={cn(
+          'font-mono text-xs tabular-nums',
           isUrgent
             ? 'animate-pulse font-semibold text-orange-700 motion-reduce:animate-none'
-            : 'text-gray-600'
-        }`}
+            : 'text-gray-600',
+        )}
       >
-        <span aria-hidden>{display}</span>
+        <span aria-hidden>{formatCountdown(remaining)}</span>
       </span>
     </span>
   )

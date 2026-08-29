@@ -1,6 +1,9 @@
 'use client'
 
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Screen } from '@/components/ui/Screen'
+import { focusRing } from '@/components/ui/focus-ring'
+import { cn } from '@/lib/utils'
 
 interface Props {
   children: ReactNode
@@ -32,7 +35,9 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    // Server-side only, and never the component stack's rendered content.
+    // The console, not the screen: this runs in the browser, so the point is
+    // that nothing here reaches the person. The component stack is names only,
+    // never the content those components rendered.
     console.error('[ErrorBoundary]', error.message, info.componentStack)
   }
 
@@ -51,14 +56,17 @@ export class ErrorBoundary extends Component<Props, State> {
     if (!this.state.hasError) return this.props.children
 
     return (
-      <main
+      <Screen
+        center
         role="alert"
         data-testid="error-boundary"
-        className="flex min-h-screen flex-col items-center justify-center bg-[#F8FAFC] px-6 text-center"
+        className="text-center"
       >
-        <p className="font-serif text-lg font-medium text-[#2C5F8A]">anchor</p>
+        <p className="font-serif text-lg font-medium text-anchor-brand-blue">
+          anchor
+        </p>
 
-        <h1 className="mt-6 text-xl font-semibold text-[#1A1A2E]">
+        <h1 className="mt-6 text-xl font-semibold text-anchor-ink-strong">
           Something went wrong
         </h1>
         <p className="mt-2 max-w-sm text-sm text-gray-600">
@@ -66,10 +74,18 @@ export class ErrorBoundary extends Component<Props, State> {
           again will not carry anything over.
         </p>
 
+        {/* Deliberately not the `primary` variant: this is the only primary
+            button in the app that is blue rather than mint, and adopting the
+            variant would change its padding too. Kept as-is so this pass
+            changes nothing on screen; the colour split is worth settling
+            separately. */}
         <button
           type="button"
           onClick={this.handleReset}
-          className="mt-8 min-h-[44px] rounded-xl bg-[#2C5F8A] px-6 text-sm font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2C5F8A]"
+          className={cn(
+            focusRing({ ring: 'brand' }),
+            'mt-8 min-h-[44px] rounded-xl bg-anchor-brand-blue px-6 text-sm font-medium text-white transition-opacity hover:opacity-90',
+          )}
         >
           Start fresh
         </button>
@@ -77,7 +93,7 @@ export class ErrorBoundary extends Component<Props, State> {
         <p className="mt-6 text-xs text-gray-500">
           If you are in crisis, call or text 988, or call 911 in an emergency.
         </p>
-      </main>
+      </Screen>
     )
   }
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { retryWording } from '@/lib/retry-wording'
+import { HTTP_TOO_MANY_REQUESTS } from '@/lib/http'
 
 function isValidSessionPayload(
   data: unknown,
@@ -50,7 +51,7 @@ export function useSession(): Session {
 
       // A throttled start is not a broken one, and "please refresh" is the
       // worst possible advice here — refreshing is what spends the allowance.
-      if (res.status === 429) {
+      if (res.status === HTTP_TOO_MANY_REQUESTS) {
         setError(
           `Anchor is busy right now. Please try again in ${retryWording(
             res.headers.get('Retry-After'),
